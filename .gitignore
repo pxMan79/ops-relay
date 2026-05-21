@@ -1,0 +1,101 @@
+# ============================================
+# ops-relay .gitignore
+# 脱敏处理：排除敏感文件和生成产物
+# ============================================
+
+# ==================== Python ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+ENV/
+env/
+.venv/
+
+# IDE 配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ==================== 数据库和数据文件 ====================
+*.db
+*.sqlite3
+*.sqlite
+data/db/
+monitoring.db
+
+# Excel 报表（包含敏感数据）
+*.xlsx
+Server_Report_*.xlsx
+
+# 日志文件
+*.log
+logs/
+backend.log
+
+# ==================== 敏感配置文件（核心脱敏） ====================
+# 真实的配置文件（含密码、token等）
+config.yml
+.env
+.env.local
+.env.production
+
+# SSH 密钥
+ssh/
+id_rsa*
+*.pem
+known_hosts
+
+# Ansible 临时文件
+/tmp/ansible_out_*
+
+# ==================== Node.js / 前端 ====================
+node_modules/
+dist/
+.cache/
+
+# 构建日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==================== Docker ====================
+.docker/
+
+# ==================== 操作系统文件 ====================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==================== 项目特定 ====================
+# 历史遗留脚本（可选保留）
+一键获取巡检报表.bat
+
+# 文档草稿（.trae 内部使用）
+.trae/documents/*.md.bak
+
+# 备份文件
+*.bak
+*.backup
+*~

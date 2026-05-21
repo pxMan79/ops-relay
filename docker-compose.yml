@@ -1,0 +1,60 @@
+# ============================================
+# ops-relay Docker Compose 编排文件
+# 一键部署：后端 API + 前端 + 数据持久化
+# ============================================
+
+version: "3.8"
+
+services:
+  # ==================== 后端 API 服务 ====================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: ops-relay-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # 挂载配置文件（支持热更新）
+      - ./config.yml:/app/config.yml:ro
+      # 持久化数据库
+      - ./data/db:/app/data
+      # 挂载 SSH 密钥（用于 Ansible 连接被监控服务器）
+      - ~/.ssh:/root/.ssh:ro
+      # 挂载 Ansible 配置（可选）
+      - ./ansible:/etc/ansible:ro
+    environment:
+      - TZ=Asia/Shanghai
+      - PYTHONUNBUFFERED=1
+    networks:
+      - ops-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ==================== 前端 Web 服务 ====================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ops-relay-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - ops-network
+
+networks:
+  ops-network:
+    driver: bridge
+
+volumes:
+  db-data:
+    driver: local

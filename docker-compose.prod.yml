@@ -1,0 +1,91 @@
+# ============================================
+# ops-relay 生产环境 Docker Compose
+# 包含：日志收集 + 资源限制 + 备份策略
+# ============================================
+
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: ops-relay-backend-prod
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yml:/app/config.yml:ro
+      - ./data/db:/app/data
+      - ~/.ssh:/root/.ssh:ro
+      - ./logs/backend:/app/logs
+    environment:
+      - TZ=Asia/Shanghai
+      - LOG_LEVEL=INFO
+    networks:
+      - ops-network
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ops-relay-frontend-prod
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - ops-network
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "2"
+
+  # 可选：定时任务服务（数据采集调度器）
+  collector-scheduler:
+    image: backend:latest
+    container_name: ops-relay-scheduler
+    restart: always
+    entrypoint: ["python", "-m", "scripts.scheduler"]
+    volumes_from:
+      - backend
+    environment:
+      - TZ=Asia/Shanghai
+      - COLLECTION_CRON="0 8 * * *"  # 每天8点采集
+    networks:
+      - ops-network
+    profiles:
+      - scheduler  # 使用 --profile scheduler 启动
+
+networks:
+  ops-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
