@@ -2,10 +2,10 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from datetime import datetime
 import uuid
 
-from ..models import CollectRequest, CollectResponse
-from ..config import config_loader
-from ..schemas.models import DatabaseManager
-from backend.services.collector import CollectorService
+from models import CollectRequest, CollectResponse
+from config import config_loader
+from schemas.models import DatabaseManager
+from services.collector import CollectorService
 
 
 router = APIRouter(prefix="/api", tags=["collection"])
@@ -37,12 +37,17 @@ async def trigger_collection(
 
         # 保存到数据库
         collector.save_to_database(data)
+        success_count = sum(1 for item in data if item.get("采集状态") == "success")
+        failed_count = len(data) - success_count
 
         return CollectResponse(
             code=200,
-            message=f"成功采集 {len(data)} 台服务器数据",
+            message=f"成功采集 {success_count}/{len(data)} 台服务器数据",
             task_id=task_id,
             estimated_time=f"{len(data) * 2}秒",
+            total_count=len(data),
+            success_count=success_count,
+            failed_count=failed_count,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"采集失败: {str(e)}")

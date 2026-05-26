@@ -153,7 +153,16 @@ onUnmounted(() => {
             <div>
               <p class="text-sm text-slate-400 mb-1">平均 CPU</p>
               <p class="text-3xl font-bold font-mono text-cyan-400">
-                {{ servers.length > 0 ? (servers.reduce((sum, s) => sum + s.cpu_usage, 0) / servers.length).toFixed(1) : 0 }}%
+                {{
+                  servers.filter((s) => s.collection_status === "success").length > 0
+                    ? (
+                        servers
+                          .filter((s) => s.collection_status === "success")
+                          .reduce((sum, s) => sum + s.cpu_usage, 0) /
+                        servers.filter((s) => s.collection_status === "success").length
+                      ).toFixed(1)
+                    : 0
+                }}%
               </p>
             </div>
             <div class="w-12 h-12 rounded-lg bg-cyan-500/20 flex items-center justify-center">

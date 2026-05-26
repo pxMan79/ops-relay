@@ -22,13 +22,21 @@ class ServerStatusResponse(BaseModel):
     id: int
     ip: str
     hostname: str = ""
+    os_type: str = ""
+    group_name: str = ""
     os_version: str = ""
     uptime: str = ""
     cpu_usage: float = 0.0
+    cpu_text: str = ""
     memory: MemoryInfo = Field(default_factory=MemoryInfo)
+    memory_text: str = ""
     disks: List[DiskInfo] = Field(default_factory=list)
+    system_disk_text: str = ""
+    data_disk_text: str = ""
     last_update: Optional[datetime] = None
     overall_status: str = "normal"
+    collection_status: str = "success"
+    collection_error: str = ""
 
 
 class ServerListResponse(BaseModel):
@@ -47,6 +55,9 @@ class CollectResponse(BaseModel):
     message: str = ""
     task_id: str = ""
     estimated_time: str = ""
+    total_count: int = 0
+    success_count: int = 0
+    failed_count: int = 0
 
 
 class HistoryQueryParams(BaseModel):

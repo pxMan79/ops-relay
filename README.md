@@ -1,11 +1,10 @@
 # ops-relay
 
-🚀 **基于 Ansible + FastAPI + Vue 3 的内网服务器监控平台**
+基于 Ansible + FastAPI + Vue 3 的内网服务器监控平台
 
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104-009688.svg)](https://fastapi.tiangolo.com/)
 [![Vue 3](https://img.shields.io/badge/Vue-3.4-4FC08D.svg)](https://vuejs.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
@@ -45,7 +44,7 @@
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/YOUR_USERNAME/ops-relay.git
+git clone https://github.com/pxMan79/ops-relay.git
 cd ops-relay
 
 # 2. 配置文件（重要！）
@@ -60,8 +59,10 @@ bash deploy.sh --dev    # 开发环境
 bash deploy.sh --prod   # 生产环境
 
 # 4. 访问服务
-# 前端: http://YOUR_SERVER_IP
-# API 文档: http://YOUR_SERVER_IP:8000/docs
+# 开发环境前端: http://YOUR_SERVER_IP:8081
+# 开发环境 API 文档: http://YOUR_SERVER_IP:8001/docs
+# 生产环境前端: http://YOUR_SERVER_IP
+# 生产环境 API 文档: http://YOUR_SERVER_IP:8000/docs
 ```
 
 ### 方式二：手动 Docker Compose
@@ -70,7 +71,7 @@ bash deploy.sh --prod   # 生产环境
 # 开发环境
 docker compose up -d --build
 
-# 生产环境（带资源限制和日志收集）
+# 生产环境（带资源限制）
 docker compose -f docker-compose.prod.yml up -d --build
 
 # 查看日志
@@ -106,6 +107,7 @@ cd frontend
 npm install
 npm run dev
 # 访问 http://localhost:5173
+# 如使用 Docker 开发编排，前端默认映射到 http://localhost:8081
 ```
 
 ---
@@ -184,8 +186,8 @@ ops-relay/
 
 | 服务 | 容器端口 | 宿主机端口 | 说明 |
 |------|---------|-----------|------|
-| Frontend (Nginx) | 80 | 80 | Web Dashboard |
-| Backend (FastAPI) | 8000 | 8000 | REST API |
+| Frontend (Nginx) | 80 | 8081 / 80 | 开发 / 生产 |
+| Backend (FastAPI) | 8000 | 8001 / 8000 | 开发 / 生产 |
 
 ---
 
@@ -341,42 +343,12 @@ docker exec ops-relay-frontend cat /etc/nginx/conf.d/default.conf
 
 ---
 
-## 🤝 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 创建 Pull Request
-
----
-
 ## 📄 许可证
 
-本项目采用 [MIT License](LICENSE) 开源。
+当前仓库未附带单独的许可证文件；如需公开发布，建议先补充明确的许可证声明。
 
 ---
 
-## 👥 致谢
+## 📌 仓库地址
 
-- [FastAPI](https://fastapi.tiangolo.com/) - 现代 Web 框架
-- [Vue.js](https://vuejs.org/) - 渐进式 JavaScript 框架
-- [Tailwind CSS](https://tailwindcss.com/) - 实用优先的 CSS 框架
-- [Lucide Icons](https://lucide.dev/) - 美观的图标库
-- [Ansible](https://www.ansible.com/) - 自动化运维工具
-
----
-
-## 📞 支持
-
-- 📖 [完整文档](docs/)
-- 🐛 [Issue 反馈](https://github.com/YOUR_USERNAME/ops-relay/issues)
-- 💬 [讨论区](https://github.com/YOUR_USERNAME/ops-relay/discussions)
-
----
-
-<p align="center">
-  Made with ❤️ by Ops Team
-</p>
+- GitHub: https://github.com/pxMan79/ops-relay

@@ -2,9 +2,9 @@ from fastapi import APIRouter, HTTPException, Query
 from datetime import datetime, timedelta
 from typing import Optional
 
-from ..models import HistoryQueryParams, HistoryResponse
-from ..config import config_loader
-from ..schemas.models import DatabaseManager, HistorySnapshot, Server
+from models import HistoryQueryParams, HistoryResponse
+from config import config_loader
+from schemas.models import DatabaseManager, HistorySnapshot, Server
 
 
 router = APIRouter(prefix="/api", tags=["history"])

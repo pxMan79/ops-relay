@@ -58,7 +58,7 @@ check_prerequisites() {
     # 检查项目目录
     if [ ! -d "$PROJECT_DIR" ]; then
         log_error "项目目录不存在: $PROJECT_DIR"
-        log_info "请先克隆仓库: git clone https://github.com/YOUR_USERNAME/ops-relay.git $PROJECT_DIR"
+        log_info "请先克隆仓库: git clone https://github.com/pxMan79/ops-relay.git $PROJECT_DIR"
         exit 1
     fi
     
@@ -95,8 +95,8 @@ deploy_dev() {
     log_success "✅ 开发环境部署完成！"
     echo ""
     echo -e "访问地址:"
-    echo -e "  ${GREEN}前端 Dashboard${NC}: http://$(hostname -I | awk '{print $1}')"
-    echo -e "  ${GREEN}后端 API 文档${NC}: http://$(hostname -I | awk '{print $1}'):8000/docs"
+    echo -e "  ${GREEN}前端 Dashboard${NC}: http://$(hostname -I | awk '{print $1}'):8081"
+    echo -e "  ${GREEN}后端 API 文档${NC}: http://$(hostname -I | awk '{print $1}'):8001/docs"
     echo ""
     echo -e "${YELLOW}提示: 使用 'bash deploy.sh --logs' 查看实时日志${NC}"
 }

@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 import os
 
-from .config import config_loader
-from .schemas.models import DatabaseManager
-from .routers import servers, collect, history
+from config import config_loader
+from schemas.models import DatabaseManager
+from routers import servers, collect, history
 
 
 @asynccontextmanager
@@ -71,4 +72,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """健康检查接口"""
-    return {"status": "healthy", "timestamp": "2026-05-21T10:30:00Z"}
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }

@@ -41,8 +41,8 @@ cd /d %PROJECT_DIR%
 docker compose -f %COMPOSE_FILE% up -d --build
 echo.
 echo [SUCCESS] ✅ 开发环境部署完成！
-echo 访问地址: http://localhost
-echo API 文档: http://localhost:8000/docs
+echo 访问地址: http://localhost:8081
+echo API 文档: http://localhost:8001/docs
 goto end
 
 :prod

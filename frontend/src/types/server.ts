@@ -17,13 +17,21 @@ export interface ServerStatus {
   id: number;
   ip: string;
   hostname: string;
+  os_type: string;
+  group_name: string;
   os_version: string;
   uptime: string;
   cpu_usage: number;
+  cpu_text: string;
   memory: MemoryInfo;
+  memory_text: string;
   disks: DiskInfo[];
+  system_disk_text: string;
+  data_disk_text: string;
   last_update: string | null;
-  overall_status: "normal" | "warning" | "critical";
+  overall_status: "normal" | "warning" | "critical" | "offline";
+  collection_status: "success" | "failed" | "unreachable" | "missing";
+  collection_error: string;
 }
 
 export interface ServerListResponse {
@@ -46,4 +54,7 @@ export interface CollectResponse {
   message: string;
   task_id: string;
   estimated_time: string;
+  total_count: number;
+  success_count: number;
+  failed_count: number;
 }
