@@ -11,7 +11,7 @@ services:
     container_name: ops-relay-backend-prod
     restart: always
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./config.yml:/app/config.yml:ro
       - ./data/db:/app/data
@@ -49,7 +49,7 @@ services:
     container_name: ops-relay-frontend-prod
     restart: always
     ports:
-      - "80:80"
+      - "8081:80"
     depends_on:
       backend:
         condition: service_healthy
