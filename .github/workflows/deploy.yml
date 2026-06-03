@@ -14,16 +14,36 @@ jobs:
   deploy:
     runs-on: ops-relay
     steps:
-      - name: Deploy to server
+      - name: Pull latest code
         run: |
           set -e
-          echo "开始部署 ops-relay..."
           cd /opt/ops-relay
           git fetch --all
           git reset --hard origin/main
-          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-          echo "部署完成"
+
+      - name: Build and start backend
+        run: |
+          cd /opt/ops-relay
+          docker compose -f docker-compose.prod.yml up -d --build backend
+          echo "等待 backend 健康检查..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8001/health > /dev/null 2>&1; then
+              echo "backend 就绪"
+              break
+            fi
+            echo "等待中... ($i/30)"
+            sleep 5
+          done
+
+      - name: Start frontend
+        run: |
+          cd /opt/ops-relay
+          docker compose -f docker-compose.prod.yml up -d --build frontend
+
       - name: Verify deployment
         run: |
           sleep 10
-          docker ps --format 'table {{.Names}}\t{{.Status}}' | grep ops-relay
+          echo "=== 容器状态 ==="
+          docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep ops-relay
+          echo "=== 健康检查 ==="
+          curl -sf http://localhost:8001/health || echo "backend 不健康"
