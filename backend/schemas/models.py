@@ -58,34 +58,34 @@ class AlertLog(Base):
     server = relationship("Server", back_populates="alerts")
 
 
+_engines = {}
+
+
+def get_engine(db_path: str):
+    abs_path = os.path.abspath(db_path)
+    if abs_path not in _engines:
+        os.makedirs(os.path.dirname(abs_path) if os.path.dirname(abs_path) else ".", exist_ok=True)
+        engine = create_engine(f"sqlite:///{abs_path}", echo=False)
+        Base.metadata.create_all(engine)
+        _engines[abs_path] = engine
+    return _engines[abs_path]
+
+
 class DatabaseManager:
-    _instance = None
-    _engine = None
-    _SessionLocal = None
-
-    def __new__(cls, db_path: str = "./monitoring.db"):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialize(db_path)
-        return cls._instance
-
-    def _initialize(self, db_path: str):
-        os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True)
-        self._engine = create_engine(f"sqlite:///{db_path}", echo=False)
-        Base.metadata.create_all(self._engine)
+    def __init__(self, db_path: str = "./monitoring.db"):
+        self._engine = get_engine(db_path)
         self._SessionLocal = sessionmaker(bind=self._engine)
 
     @property
     def engine(self):
         return self._engine
 
-    @property
-    def session(self):
-        db_session = self._SessionLocal()
-        try:
-            yield db_session
-        finally:
-            db_session.close()
-
     def get_session(self):
         return self._SessionLocal()
+
+    def get_db(self):
+        db = self._SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()

@@ -527,6 +527,7 @@ def sort_logic(item: Dict[str, Any]) -> tuple:
 class CollectorService:
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
+        self._pending_alerts = []
 
     def collect_all(self) -> List[Dict[str, Any]]:
         all_data = get_linux_data() + get_windows_data()
@@ -600,13 +601,13 @@ class CollectorService:
                 # 检查告警并记录
                 if collection_status == "success":
                     self._check_and_create_alert(
-                        db_session, server.id, "memory", memory_pct
+                        db_session, server.id, "memory", memory_pct, ip
                     )
                     self._check_and_create_alert(
-                        db_session, server.id, "disk", disk_pct
+                        db_session, server.id, "disk", disk_pct, ip
                     )
                     self._check_and_create_alert(
-                        db_session, server.id, "cpu", cpu_usage
+                        db_session, server.id, "cpu", cpu_usage, ip
                     )
 
                 # 更新服务器最后更新时间
@@ -614,6 +615,18 @@ class CollectorService:
                 server.is_active = collection_status == "success"
 
             db_session.commit()
+
+            # 发送钉钉告警通知
+            if self._pending_alerts:
+                try:
+                    from services.notifier import send_dingtalk_alert_sync
+                    for alert_info in self._pending_alerts:
+                        send_dingtalk_alert_sync(**alert_info)
+                except Exception:
+                    pass
+                finally:
+                    self._pending_alerts.clear()
+
         except Exception as e:
             db_session.rollback()
             raise e
@@ -626,6 +639,7 @@ class CollectorService:
         server_id: int,
         alert_type: str,
         value: float,
+        server_ip: str = "",
     ) -> None:
         status = check_alert_status(value, alert_type)
 
@@ -672,6 +686,15 @@ class CollectorService:
                     message=f"{alert_type.upper()} 使用率 {value:.1f}% 超过阈值 {threshold:.1f}%",
                 )
                 db_session.add(alert)
+
+                self._pending_alerts.append({
+                    "server_ip": server_ip,
+                    "alert_type": alert_type,
+                    "severity": status,
+                    "actual_value": value,
+                    "threshold_value": threshold,
+                    "message": f"{alert_type.upper()} 使用率 {value:.1f}% 超过阈值 {threshold:.1f}%",
+                })
 
     def get_latest_status(self) -> List[Dict]:
         db_session = self.db.get_session()

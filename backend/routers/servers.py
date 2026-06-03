@@ -55,10 +55,17 @@ async def get_server_by_ip(ip: str):
     """获取指定 IP 服务器的详细信息"""
     db_config = config_loader.load().database
     db = DatabaseManager(db_config.path)
+    collector_service = CollectorService(db)
 
     try:
-        # 这里简化实现，实际应该查询数据库
-        raise HTTPException(status_code=501, detail="功能开发中")
+        servers_data = collector_service.get_latest_status()
+        for s in servers_data:
+            if s.get("ip") == ip:
+                return ServerStatusResponse(
+                    **s,
+                    overall_status=_calculate_overall_status(s),
+                )
+        raise HTTPException(status_code=404, detail=f"服务器 {ip} 不存在")
     except HTTPException:
         raise
     except Exception as e:

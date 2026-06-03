@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from datetime import datetime
 import uuid
 
@@ -6,12 +6,13 @@ from models import CollectRequest, CollectResponse
 from config import config_loader
 from schemas.models import DatabaseManager
 from services.collector import CollectorService
+from auth import verify_api_key
 
 
 router = APIRouter(prefix="/api", tags=["collection"])
 
 
-@router.post("/collect", response_model=CollectResponse)
+@router.post("/collect", response_model=CollectResponse, dependencies=[Depends(verify_api_key)])
 async def trigger_collection(
     request: CollectRequest = None,
     background_tasks: BackgroundTasks = None,

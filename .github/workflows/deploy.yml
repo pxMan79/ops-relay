@@ -1,0 +1,25 @@
+# ============================================
+# ops-relay Gitea Actions 自动部署
+# push 到 main 分支 → 自动部署到 10.0.0.15
+# ============================================
+
+name: Deploy ops-relay
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ops-relay
+    steps:
+      - name: Deploy to server
+        run: |
+          set -e
+          echo "开始部署 ops-relay..."
+          cd /opt/ops-relay
+          git fetch --all
+          git reset --hard origin/main
+          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+          echo "部署完成"

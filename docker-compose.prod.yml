@@ -1,6 +1,6 @@
 # ============================================
 # ops-relay 生产环境 Docker Compose
-# 包含：日志收集 + 资源限制 + 备份策略
+# 包含：日志收集 + 资源限制
 # ============================================
 
 services:
@@ -34,7 +34,7 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: "50m"
+        max-size: "10m"
         max-file: "3"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -63,7 +63,7 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: "20m"
+        max-size: "10m"
         max-file: "2"
 
 networks:
