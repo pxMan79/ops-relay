@@ -1,6 +1,7 @@
 # ============================================
-# ops-relay Gitea Actions 自动部署
-# push 到 main 分支 → 自动部署到 10.0.0.15
+# ops-relay 自动部署（单容器，适配 Nginx Proxy Manager）
+# push 到 main → 在自托管 runner 上构建并启动 ops-relay 单容器
+# 反代/HTTPS 由容器外的 NPM 面板处理
 # ============================================
 
 name: Deploy ops-relay
@@ -21,29 +22,32 @@ jobs:
           git fetch --all
           git reset --hard origin/main
 
-      - name: Build and start backend
+      - name: Ensure NPM proxy network
+        run: |
+          docker network inspect proxy >/dev/null 2>&1 || docker network create proxy
+
+      - name: Remove legacy frontend/backend containers
+        run: |
+          # 旧版是 frontend+backend 双容器，改为单体后需先清掉，避免抢 8001 端口
+          docker rm -f ops-relay-backend ops-relay-frontend ops-relay-backend-prod ops-relay-frontend-prod 2>/dev/null || true
+
+      - name: Build and start ops-relay (single container)
         run: |
           cd /opt/ops-relay
-          docker compose -f docker-compose.prod.yml up -d --build backend
-          echo "等待 backend 健康检查..."
+          docker compose -f docker-compose.yml up -d --build
+
+      - name: Verify deployment
+        run: |
+          echo "等待健康检查..."
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8001/health > /dev/null 2>&1; then
-              echo "backend 就绪"
+              echo "✅ ops-relay 就绪"
               break
             fi
             echo "等待中... ($i/30)"
             sleep 5
           done
-
-      - name: Start frontend
-        run: |
-          cd /opt/ops-relay
-          docker compose -f docker-compose.prod.yml up -d --build frontend
-
-      - name: Verify deployment
-        run: |
-          sleep 10
           echo "=== 容器状态 ==="
           docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep ops-relay
           echo "=== 健康检查 ==="
-          curl -sf http://localhost:8001/health || echo "backend 不健康"
+          curl -sf http://localhost:8001/health || echo "❌ backend 不健康"

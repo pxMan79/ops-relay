@@ -1,60 +1,56 @@
 # ============================================
-# ops-relay Docker Compose 编排文件
-# 开发环境：后端 API + 前端 + 数据持久化
+# ops-relay 单容器编排（适配 Nginx Proxy Manager）
+# 单个 ops-relay 容器：FastAPI 同时托管前端 SPA + /api。
+# 反代与 HTTPS 由容器外的 NPM 面板处理；容器内不再自带 nginx。
+#
+# 接入方式（二选一，可同时用）：
+#   1) NPM 共用网络：NPM 容器也挂到 proxy 网络，转发目标填 http://ops-relay:8000
+#   2) 兜底直连：http://<本机IP>:8001  （NPM 没配好前可用；配好后可删 ports 段）
+#
+# 首次运行前先建外部网络（deploy.sh 会自动建）：
+#   docker network create proxy
+# 若你的 NPM 用了别的网络名，在 .env 里设 PROXY_NETWORK=<名字>
 # ============================================
 
 services:
-  # ==================== 后端 API 服务 ====================
-  backend:
+  ops-relay:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: ops-relay-backend
+    image: ops-relay:latest
+    container_name: ops-relay
     restart: unless-stopped
+    # 兜底端口：NPM 走网络时不依赖它；不需要可整段删掉
     ports:
       - "8001:8000"
     volumes:
       - ./config.yml:/app/config.yml:ro
       - ./data/db:/app/data
       - ~/.ssh:/root/.ssh:ro
-      - ./inventory.ini:/etc/ansible/hosts:ro
+      - ${ANSIBLE_INVENTORY_PATH:-./inventory.ini}:/etc/ansible/hosts:ro
+      - ./host_vars:/etc/ansible/host_vars:ro
     environment:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - STATIC_DIR=/app/static
     networks:
-      - ops-network
+      - default
+      - proxy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
-
-  # ==================== 前端 Web 服务 ====================
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    container_name: ops-relay-frontend
-    restart: unless-stopped
-    ports:
-      - "8081:80"
-    depends_on:
-      backend:
-        condition: service_healthy
+      start_period: 30s
     logging:
       driver: json-file
       options:
         max-size: "10m"
-        max-file: "2"
-    networks:
-      - ops-network
+        max-file: "3"
 
 networks:
-  ops-network:
+  default:
     driver: bridge
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}

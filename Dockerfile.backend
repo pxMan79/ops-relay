@@ -1,18 +1,34 @@
 # ============================================
-# ops-relay 后端 Dockerfile
-# 基于 Python 3.11-slim 的轻量级镜像
-# 已优化：使用国内镜像源加速构建
+# ops-relay 单体镜像（前端 + 后端）
+# 阶段 1：构建 Vue 前端 → dist
+# 阶段 2：Python 后端，内置 dist 静态资源
+# Nginx Proxy Manager 在容器外做反代 + HTTPS，容器内不再自带 nginx。
 # ============================================
 
+# ---------- 阶段 1：构建前端 ----------
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /build
+
+# 先装依赖，利用缓存
+COPY frontend/package*.json ./
+RUN npm ci --silent
+
+# 构建生产产物（Vite 默认 base=/，产物输出到 /build/dist）
+COPY frontend/ ./
+RUN npm run build
+
+# ---------- 阶段 2：后端运行时 ----------
 FROM python:3.11-slim
 
-LABEL description="ops-relay backend service"
+LABEL description="ops-relay (frontend + backend in one container)"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    STATIC_DIR=/app/static
 
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
     sed -i 's/deb.debian.com/mirrors.aliyun.com/g' /etc/apt/sources.list 2>/dev/null; \
@@ -35,6 +51,9 @@ RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua
 # 复制后端代码
 COPY backend/ ./
 
+# 复制前端构建产物到静态目录（由 main.py 的 SPAStaticFiles 托管）
+COPY --from=frontend-builder /build/dist ./static
+
 # 创建数据目录
 RUN mkdir -p /app/data /root/.ssh
 
@@ -42,7 +61,7 @@ RUN mkdir -p /app/data /root/.ssh
 EXPOSE 8000
 
 # 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # 启动命令

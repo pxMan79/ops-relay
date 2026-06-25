@@ -23,18 +23,20 @@
 ## 🏗️ 架构概览
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐
-│   前端 (Vue 3)   │────▶│  Nginx 反向代理    │────▶│ 后端 API    │
-│   端口: 80      │     │                  │     │ 端口: 8000  │
-└─────────────────┘     └──────────────────┘     └──────┬──────┘
-                                                         │
-                        ┌────────────────────────────────┘
-                        │
-                   ┌────▼────┐
-                   │ SQLite  │
-                   │ 数据库   │
-                   └─────────┘
+┌──────────────┐   https://ops.xxx   ┌─────────────────────┐   http   ┌──────────────────────┐
+│   浏览器      │────────────────────▶│ Nginx Proxy Manager │────────▶│  ops-relay 容器:8000  │
+└──────────────┘                      │ (反代 + TLS 证书)    │         │  FastAPI             │
+                                      └─────────────────────┘         │   ├─ /        Vue SPA │
+                                       (共用 proxy docker 网络)        │   ├─ /api/*    接口  │
+                                                                      │   └─ /health   健康检查│
+                                                                      └──────────┬───────────┘
+                                                                                 │
+                                                                            ┌────▼────┐
+                                                                            │ SQLite  │
+                                                                            └─────────┘
 ```
+
+> 单体容器：前端构建产物内置进后端镜像，由 FastAPI 直接托管，**不再有独立 nginx 前端容器**（消除了旧版 frontend→backend 内部反代导致的 502）。反代与 HTTPS 统一交给容器外的 **Nginx Proxy Manager**。
 
 ---
 
@@ -52,17 +54,14 @@ cp config.yml.example config.yml
 cp .env.example .env
 # 编辑 config.yml 和 .env，填入真实配置
 
-# 3. 一键启动
+# 3. 一键启动（自动建 NPM 共用网络 + 构建启动单容器）
 chmod +x deploy.sh
-bash deploy.sh --dev    # 开发环境
-# 或
-bash deploy.sh --prod   # 生产环境
+bash deploy.sh
 
 # 4. 访问服务
-# 开发环境前端: http://YOUR_SERVER_IP:8081
-# 开发环境 API 文档: http://YOUR_SERVER_IP:8001/docs
-# 生产环境前端: http://YOUR_SERVER_IP
-# 生产环境 API 文档: http://YOUR_SERVER_IP:8000/docs
+# 兜底直连:   http://YOUR_SERVER_IP:8001
+# API 文档:   http://YOUR_SERVER_IP:8001/docs
+# NPM 反代:   把 NPM 容器也挂到 proxy 网络，转发目标 http://ops-relay:8000
 ```
 
 ### 方式二：手动 Docker Compose
@@ -167,12 +166,13 @@ DINGTALK_WEBHOOK_URL=YOUR_DINGTALK_TOKEN
 
 ```
 ops-relay/
-├── Dockerfile.backend       # 后端镜像 (Python 3.11)
-├── Dockerfile.frontend      # 前端镜像 (Node 构建 + Nginx)
-├── docker-compose.yml       # 开发环境编排
-├── docker-compose.prod.yml  # 生产环境编排（含资源限制）
-└── nginx.conf               # Nginx 反向代理配置
+├── Dockerfile.backend       # 单体镜像（多阶段：构建 Vue dist + Python 后端）
+├── docker-compose.yml       # 唯一编排：单服务 + 外部 proxy 网络对接 NPM
+├── deploy.sh                # 部署脚本（自动建 proxy 网络 + 启动）
+└── config.yml.example       # 配置模板
 ```
+
+> `Dockerfile.frontend` / `nginx.conf` / `docker-compose.prod.yml` 已废弃（单体改造后不再使用）。
 
 ### 卷挂载说明
 
@@ -181,13 +181,34 @@ ops-relay/
 | `./config.yml` | `/app/config.yml` | 配置文件（热更新） |
 | `./data/db` | `/app/data` | SQLite 数据库持久化 |
 | `~/.ssh` | `/root/.ssh` | SSH 密钥（Ansible 连接） |
+| `./inventory.ini` | `/etc/ansible/hosts` | Ansible 清单（决定 OS 类型） |
+| `./host_vars/` | `/etc/ansible/host_vars` | Ansible 主机变量（含 Windows 密码，不入 git） |
 
 ### 端口映射
 
-| 服务 | 容器端口 | 宿主机端口 | 说明 |
-|------|---------|-----------|------|
-| Frontend (Nginx) | 80 | 8081 / 80 | 开发 / 生产 |
-| Backend (FastAPI) | 8000 | 8001 / 8000 | 开发 / 生产 |
+| 容器端口 | 宿主机端口 | 说明 |
+|---------|-----------|------|
+| 8000 | 8001 | **兜底直连**，NPM 配好可删 |
+
+### 接入 Nginx Proxy Manager
+
+```bash
+# 1. 建共用网络（deploy.sh 会自动建；也可手动）
+docker network create proxy
+
+# 2. 启动 ops-relay
+bash deploy.sh
+
+# 3. 让 NPM 也挂到 proxy 网络（编辑 NPM 的 compose 加上后 docker compose up -d）
+#    networks:
+#      - proxy   # external: true, name: proxy
+
+# 4. 在 NPM 面板新建 Proxy Host：
+#    Domain Names : 你的域名（暂无域名可先填内网访问）
+#    Forward Hostname : ops-relay
+#    Forward Port     : 8000
+#    勾选 SSL → Request a new SSL Certificate（有域名时）
+```
 
 ---
 

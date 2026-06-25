@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import os
@@ -125,21 +127,6 @@ app.include_router(collect.router)
 app.include_router(history.router)
 
 
-@app.get("/")
-async def root():
-    """根路径，返回API信息"""
-    return {
-        "name": "服务器监控系统 API",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "endpoints": {
-            "servers": "/api/servers",
-            "collect": "/api/collect",
-            "history": "/api/history",
-        },
-    }
-
-
 @app.get("/health")
 async def health_check():
     """健康检查接口"""
@@ -147,3 +134,44 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ============================================
+# 前端 SPA 静态托管（单体容器模式）
+# 容器内 /app/static 放 Vue 构建产物（dist）。
+# /api、/health、/docs 等路由在上方先注册，优先匹配；
+# 其余路径走静态文件，找不到时回退 index.html（支持 Vue Router history 模式）。
+# 开发态（无 STATIC_DIR）则提供 / 信息接口，前端走 vite dev server。
+# ============================================
+STATIC_DIR = os.environ.get("STATIC_DIR", "/app/static")
+
+
+class SPAStaticFiles(StaticFiles):
+    """静态文件 + 单页应用回退：未命中的路径返回 index.html。"""
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise exc
+
+
+if os.path.isdir(STATIC_DIR):
+    app.mount("/", SPAStaticFiles(directory=STATIC_DIR, html=True), name="spa")
+    print(f"🎨 前端静态资源已挂载: {STATIC_DIR}")
+else:
+    @app.get("/")
+    async def root():
+        """根路径，返回 API 信息（仅开发态，生产由 SPA 接管 /）"""
+        return {
+            "name": "服务器监控系统 API",
+            "version": "1.0.0",
+            "docs": "/docs",
+            "endpoints": {
+                "servers": "/api/servers",
+                "collect": "/api/collect",
+                "history": "/api/history",
+            },
+        }

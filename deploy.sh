@@ -1,227 +1,109 @@
 #!/bin/bash
 # ============================================
-# ops-relay 一键部署脚本 (10.0.0.15)
+# ops-relay 单容器部署脚本（适配 Nginx Proxy Manager）
 # 用法: bash deploy.sh [选项]
-#   选项:
-#     --dev     开发环境部署（带热重载）
-#     --prod    生产环境部署（优化配置）
-#     --stop    停止所有服务
-#     --logs    查看日志
-#     --status  查看服务状态
+#   (默认) / --up    构建并启动 ops-relay 单容器
+#   --stop           停止
+#   --logs           实时日志
+#   --status         容器状态 + 资源占用
+#   --network        仅创建 NPM 共用的 proxy 网络
+#   --help           帮助
 # ============================================
 
-set -e  # 遇到错误立即退出
+set -e
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# 项目目录
-PROJECT_DIR="/root/ops-relay"
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 COMPOSE_FILE="docker-compose.yml"
-COMPOSE_PROD="docker-compose.prod.yml"
+# 默认在脚本所在目录运行；也允许用环境变量覆盖
+PROJECT_DIR="${OPS_RELAY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
+log_warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
 
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-check_prerequisites() {
-    log_info "检查前置条件..."
-    
-    # 检查 Docker
-    if ! command -v docker &> /dev/null; then
-        log_error "Docker 未安装！请先安装 Docker"
+ensure_compose() {
+    if [ ! -f "$PROJECT_DIR/$COMPOSE_FILE" ]; then
+        log_error "找不到 $PROJECT_DIR/$COMPOSE_FILE"
+        log_info "请在项目目录运行，或设 OPS_RELAY_DIR 指向项目路径"
         exit 1
     fi
-    
-    # 检查 Docker Compose
-    if ! docker compose version &> /dev/null; then
-        log_error "Docker Compose 未安装！"
-        exit 1
-    fi
-    
-    # 检查项目目录
-    if [ ! -d "$PROJECT_DIR" ]; then
-        log_error "项目目录不存在: $PROJECT_DIR"
-        log_info "请先克隆仓库: git clone https://github.com/pxMan79/ops-relay.git $PROJECT_DIR"
-        exit 1
-    fi
-    
-    # 检查配置文件
-    if [ ! -f "$PROJECT_DIR/config.yml" ]; then
-        log_warn "config.yml 不存在，使用模板创建..."
-        cp "$PROJECT_DIR/config.yml.example" "$PROJECT_DIR/config.yml"
-        log_warn "⚠️  请编辑 config.yml 填入真实配置！"
-    fi
-    
-    # 检查 .env 文件
-    if [ ! -f "$PROJECT_DIR/.env" ]; then
-        log_warn ".env 不存在，使用模板创建..."
-        cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
-        log_warn "⚠️  请编辑 .env 填入敏感信息！"
-    fi
-    
-    # 检查 SSH 密钥（Ansible 需要）
-    if [ ! -f ~/.ssh/id_rsa ]; then
-        log_warn "SSH 密钥不存在，Ansible 可能无法连接远程服务器"
-    fi
-    
-    log_success "前置条件检查通过 ✓"
 }
 
-deploy_dev() {
-    log_info "🚀 开始开发环境部署..."
-    
+ensure_proxy_network() {
+    # NPM 与 ops-relay 共用的外部网络（名字可由 .env 的 PROXY_NETWORK 覆盖）
+    local net
+    net=$(grep -E '^\s*PROXY_NETWORK' "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+    net="${net:-proxy}"
+    if ! docker network inspect "$net" >/dev/null 2>&1; then
+        log_info "创建外部网络: $net"
+        docker network create "$net"
+    fi
+}
+
+deploy() {
+    log_info "🚀 部署 ops-relay 单容器..."
+    ensure_compose
+    command -v docker >/dev/null 2>&1 || { log_error "未安装 docker"; exit 1; }
+    docker compose version >/dev/null 2>&1 || { log_error "未安装 docker compose"; exit 1; }
+
+    ensure_proxy_network
+
+    [ -f "$PROJECT_DIR/config.yml" ] || cp "$PROJECT_DIR/config.yml.example" "$PROJECT_DIR/config.yml" 2>/dev/null || true
+
+    # 迁移清理：移除旧版 frontend+backend 双容器（已改为单体），避免抢 8001 端口
+    log_info "清理旧版双容器（如有）..."
+    docker rm -f ops-relay-backend ops-relay-frontend ops-relay-backend-prod ops-relay-frontend-prod 2>/dev/null || true
+
     cd "$PROJECT_DIR"
-    
-    # 构建并启动（开发模式）
     docker compose -f "$COMPOSE_FILE" up -d --build
-    
-    log_success "✅ 开发环境部署完成！"
-    echo ""
-    echo -e "访问地址:"
-    echo -e "  ${GREEN}前端 Dashboard${NC}: http://$(hostname -I | awk '{print $1}'):8081"
-    echo -e "  ${GREEN}后端 API 文档${NC}: http://$(hostname -I | awk '{print $1}'):8001/docs"
-    echo ""
-    echo -e "${YELLOW}提示: 使用 'bash deploy.sh --logs' 查看实时日志${NC}"
-}
 
-deploy_prod() {
-    log_info "🏭 开始生产环境部署..."
-    
-    cd "$PROJECT_DIR"
-    
-    # 使用生产环境 compose 文件
-    docker compose -f "$COMPOSE_PROD" up -d --build
-    
-    # 等待健康检查通过
-    log_info "等待服务启动..."
-    sleep 10
-    
-    # 验证服务状态
-    if docker compose -f "$COMPOSE_PROD" ps | grep -q "running"; then
-        log_success "✅ 生产环境部署完成！"
-        echo ""
-        echo -e "访问地址:"
-        echo -e "  ${GREEN}前端 Dashboard${NC}: http://$(hostname -I | awk '{print $1}')"
-        echo -e "  ${GREEN}后端 API${NC}: http://$(hostname -I | awk '{print $1}'):8000"
-        echo ""
-        log_info "建议配置 Nginx 反向代理 + SSL 证书"
-    else
-        log_error "❌ 部分服务启动失败，请查看日志: bash deploy.sh --logs"
-        exit 1
-    fi
+    log_info "等待健康检查..."
+    for i in $(seq 1 20); do
+        if curl -sf http://localhost:8001/health >/dev/null 2>&1; then
+            log_success "✅ 就绪 (http://$(hostname -I | awk '{print $1}'):8001)"
+            break
+        fi
+        sleep 3
+    done
+
+    cat <<EOF
+
+${GREEN}部署完成${NC}
+  兜底直连 : http://$(hostname -I | awk '{print $1}'):8001
+  API 文档 : http://$(hostname -I | awk '{print $1}'):8001/docs
+  NPM 接入 : 转发目标 http://ops-relay:8000 （需把 NPM 容器也挂到 proxy 网络）
+EOF
 }
 
 stop_services() {
-    log_info "⏹️  正在停止所有服务..."
-    
-    cd "$PROJECT_DIR"
-    
-    # 停止并清理容器
-    if [ -f "$COMPOSE_PROD" ]; then
-        docker compose -f "$COMPOSE_PROD" down 2>/dev/null || true
-    fi
-    docker compose -f "$COMPOSE_FILE" down
-    
-    log_success "✅ 所有服务已停止"
+    ensure_compose
+    cd "$PROJECT_DIR" && docker compose -f "$COMPOSE_FILE" down
+    log_success "已停止"
 }
 
 show_logs() {
-    log_info "📋 查看实时日志 (Ctrl+C 退出)..."
-    
-    cd "$PROJECT_DIR"
-    
-    # 优先显示生产环境日志
-    if [ -f "$COMPOSE_PROD" ] && docker compose -f "$COMPOSE_PROD" ps --status running | grep -q .; then
-        docker compose -f "$COMPOSE_PROD" logs -f --tail=100
-    else
-        docker compose -f "$COMPOSE_FILE" logs -f --tail=100
-    fi
+    ensure_compose
+    cd "$PROJECT_DIR" && docker compose -f "$COMPOSE_FILE" logs -f --tail=100
 }
 
 show_status() {
-    log_info "📊 服务状态概览..."
-    
+    ensure_compose
     cd "$PROJECT_DIR"
-    
-    echo ""
-    echo "=========================================="
-    echo "  ops-relay 服务状态"
-    echo "=========================================="
-    
-    if [ -f "$COMPOSE_PROD" ] && docker compose -f "$COMPOSE_PROD" ps --format table 2>/dev/null | grep -q .; then
-        docker compose -f "$COMPOSE_PROD" ps
-    elif docker compose -f "$COMPOSE_FILE" ps --format table | grep -q .; then
-        docker compose -f "$COMPOSE_FILE" ps
-    else
-        log_warn "没有运行中的容器"
-    fi
-    
-    echo ""
-    echo "=========================================="
-    echo "  系统资源使用"
-    echo "=========================================="
-    docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
+    docker compose -f "$COMPOSE_FILE" ps
+    echo "----"
+    docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" 2>/dev/null | grep -i ops-relay || true
 }
 
-# 主逻辑
-case "$1" in
-    --dev)
-        check_prerequisites
-        deploy_dev
+case "${1:---up}" in
+    --up|--prod|--dev|"") deploy ;;
+    --stop) stop_services ;;
+    --logs) show_logs ;;
+    --status) show_status ;;
+    --network) ensure_proxy_network; log_success "网络就绪" ;;
+    -h|--help)
+        echo "ops-relay 单容器部署"
+        echo "用法: bash deploy.sh [--up|--stop|--logs|--status|--network]"
         ;;
-    --prod)
-        check_prerequisites
-        deploy_prod
-        ;;
-    --stop)
-        stop_services
-        ;;
-    --logs)
-        show_logs
-        ;;
-    --status)
-        show_status
-        ;;
-    --help|-h|"")
-        echo ""
-        echo -e "${BLUE}ops-relay 部署管理脚本${NC}"
-        echo ""
-        echo "用法: bash deploy.sh [选项]"
-        echo ""
-        echo "选项:"
-        echo "  --dev      开发环境部署（默认）"
-        echo "  --prod     生产环境部署（优化+资源限制）"
-        echo "  --stop     停止所有服务"
-        echo "  --logs     查看实时日志"
-        echo "  --status   查看服务状态和资源使用"
-        echo "  --help     显示帮助信息"
-        echo ""
-        echo "示例:"
-        echo "  bash deploy.sh --dev       # 开发部署"
-        echo "  bash deploy.sh --prod      # 生产部署"
-        echo "  bash deploy.sh --logs      # 查看日志"
-        echo "  bash deploy.sh --status    # 查看状态"
-        ;;
-    *)
-        log_error "未知参数: $1"
-        echo "使用 'bash deploy.sh --help' 查看帮助"
-        exit 1
-        ;;
+    *) log_error "未知参数: $1"; exit 1 ;;
 esac
