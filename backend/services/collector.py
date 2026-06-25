@@ -407,7 +407,7 @@ def get_linux_data() -> List[Dict[str, Any]]:
         '; elif command -v lspci >/dev/null 2>&1; then '
         """lspci 2>/dev/null | grep -Ei 'VGA compatible controller|3D controller|Display controller' | sed 's/^.*: //' | awk '{print $0 "|||"}'"""
         '; elif command -v lshw >/dev/null 2>&1; then '
-        r"""lshw -C display 2>/dev/null | awk '/^[[:space:]]*\*-display/{if(seen){printf "%s||%s|%s\\n", name, vendor, driver} seen=1; name=""; vendor=""; driver=""} /^[[:space:]]*product: /{sub(/^[[:space:]]*product: /, ""); name=$0} /^[[:space:]]*vendor: /{sub(/^[[:space:]]*vendor: /, ""); vendor=$0} /^[[:space:]]*configuration: /{if(match($0, /driver=([^ ]+)/, a)) driver=a[1]} END{if(seen){printf "%s||%s|%s\\n", name, vendor, driver}}'"""
+        r"""lshw -C display 2>/dev/null | awk '/^[[:space:]]*\*-display/{if(seen){printf "%s||%s|%s\n", name, vendor, driver} seen=1; name=""; vendor=""; driver=""} /^[[:space:]]*product: /{sub(/^[[:space:]]*product: /, ""); name=$0} /^[[:space:]]*vendor: /{sub(/^[[:space:]]*vendor: /, ""); vendor=$0} /^[[:space:]]*configuration: /{if(match($0, /driver=([^ ]+)/, a)) driver=a[1]} END{if(seen){printf "%s||%s|%s\n", name, vendor, driver}}'"""
         '; else '
         'for f in /sys/class/drm/card*/device/vendor; do [ -f "$f" ] || continue; '
         'd=${f%/vendor}; vendor_id=$(cat "$d/vendor" 2>/dev/null || echo ""); '
