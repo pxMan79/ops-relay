@@ -188,27 +188,21 @@ ops-relay/
 
 | 容器端口 | 宿主机端口 | 说明 |
 |---------|-----------|------|
-| 8000 | 8001 | **兜底直连**，NPM 配好可删 |
+| 8000 | 8001 | **访问入口**：`http://<本机IP>:8001` |
 
-### 接入 Nginx Proxy Manager
+### 访问方式
 
-```bash
-# 1. 建共用网络（deploy.sh 会自动建；也可手动）
-docker network create proxy
-
-# 2. 启动 ops-relay
-bash deploy.sh
-
-# 3. 让 NPM 也挂到 proxy 网络（编辑 NPM 的 compose 加上后 docker compose up -d）
-#    networks:
-#      - proxy   # external: true, name: proxy
-
-# 4. 在 NPM 面板新建 Proxy Host：
-#    Domain Names : 你的域名（暂无域名可先填内网访问）
-#    Forward Hostname : ops-relay
-#    Forward Port     : 8000
-#    勾选 SSL → Request a new SSL Certificate（有域名时）
+**默认：IP+端口直连**（不经 NPM）
 ```
+http://<本机IP>:8001          # 大屏 Dashboard
+http://<本机IP>:8001/docs     # API 文档
+```
+
+**可选：过 Nginx Proxy Manager**（以后要域名/HTTPS/统一主页时再弄）
+- 把 ops-relay 容器和 NPM 挂到同一个 docker 网络
+- NPM 面板新建 Proxy Host，转发到 `ops-relay:8000`
+- 本项目默认不接外部网络，需要时自行在 compose 加 `networks`
+
 
 ---
 

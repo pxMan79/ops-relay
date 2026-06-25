@@ -1,20 +1,19 @@
 #!/bin/bash
 # ============================================
-# ops-relay 单容器部署脚本（适配 Nginx Proxy Manager）
+# ops-relay 单容器部署脚本（IP+端口直连模式）
 # 用法: bash deploy.sh [选项]
 #   (默认) / --up    构建并启动 ops-relay 单容器
 #   --stop           停止
 #   --logs           实时日志
 #   --status         容器状态 + 资源占用
-#   --network        仅创建 NPM 共用的 proxy 网络
 #   --help           帮助
+# 访问：http://<本机IP>:8001 （不经 NPM）
 # ============================================
 
 set -e
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 COMPOSE_FILE="docker-compose.yml"
-# 默认在脚本所在目录运行；也允许用环境变量覆盖
 PROJECT_DIR="${OPS_RELAY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 
 log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -30,24 +29,11 @@ ensure_compose() {
     fi
 }
 
-ensure_proxy_network() {
-    # NPM 与 ops-relay 共用的外部网络（名字可由 .env 的 PROXY_NETWORK 覆盖）
-    local net
-    net=$(grep -E '^\s*PROXY_NETWORK' "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
-    net="${net:-proxy}"
-    if ! docker network inspect "$net" >/dev/null 2>&1; then
-        log_info "创建外部网络: $net"
-        docker network create "$net"
-    fi
-}
-
 deploy() {
     log_info "🚀 部署 ops-relay 单容器..."
     ensure_compose
     command -v docker >/dev/null 2>&1 || { log_error "未安装 docker"; exit 1; }
     docker compose version >/dev/null 2>&1 || { log_error "未安装 docker compose"; exit 1; }
-
-    ensure_proxy_network
 
     [ -f "$PROJECT_DIR/config.yml" ] || cp "$PROJECT_DIR/config.yml.example" "$PROJECT_DIR/config.yml" 2>/dev/null || true
 
@@ -70,9 +56,8 @@ deploy() {
     cat <<EOF
 
 ${GREEN}部署完成${NC}
-  兜底直连 : http://$(hostname -I | awk '{print $1}'):8001
+  访问地址 : http://$(hostname -I | awk '{print $1}'):8001
   API 文档 : http://$(hostname -I | awk '{print $1}'):8001/docs
-  NPM 接入 : 转发目标 http://ops-relay:8000 （需把 NPM 容器也挂到 proxy 网络）
 EOF
 }
 
@@ -100,10 +85,9 @@ case "${1:---up}" in
     --stop) stop_services ;;
     --logs) show_logs ;;
     --status) show_status ;;
-    --network) ensure_proxy_network; log_success "网络就绪" ;;
     -h|--help)
-        echo "ops-relay 单容器部署"
-        echo "用法: bash deploy.sh [--up|--stop|--logs|--status|--network]"
+        echo "ops-relay 单容器部署（IP+端口直连）"
+        echo "用法: bash deploy.sh [--up|--stop|--logs|--status]"
         ;;
     *) log_error "未知参数: $1"; exit 1 ;;
 esac

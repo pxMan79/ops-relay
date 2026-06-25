@@ -1,15 +1,8 @@
 # ============================================
-# ops-relay 单容器编排（适配 Nginx Proxy Manager）
+# ops-relay 单容器编排（IP+端口直连模式）
 # 单个 ops-relay 容器：FastAPI 同时托管前端 SPA + /api。
-# 反代与 HTTPS 由容器外的 NPM 面板处理；容器内不再自带 nginx。
-#
-# 接入方式（二选一，可同时用）：
-#   1) NPM 共用网络：NPM 容器也挂到 proxy 网络，转发目标填 http://ops-relay:8000
-#   2) 兜底直连：http://<本机IP>:8001  （NPM 没配好前可用；配好后可删 ports 段）
-#
-# 首次运行前先建外部网络（deploy.sh 会自动建）：
-#   docker network create proxy
-# 若你的 NPM 用了别的网络名，在 .env 里设 PROXY_NETWORK=<名字>
+# 访问方式：http://<本机IP>:8001 （主机端口直连，不经 NPM）
+# NPM 留作以后做主页 / 上 HTTPS 用，本项目不走它，故不接任何外部网络。
 # ============================================
 
 services:
@@ -20,7 +13,6 @@ services:
     image: ops-relay:latest
     container_name: ops-relay
     restart: unless-stopped
-    # 兜底端口：NPM 走网络时不依赖它；不需要可整段删掉
     ports:
       - "8001:8000"
     volumes:
@@ -33,9 +25,6 @@ services:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
       - STATIC_DIR=/app/static
-    networks:
-      - default
-      - proxy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -47,10 +36,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-networks:
-  default:
-    driver: bridge
-  proxy:
-    external: true
-    name: ${PROXY_NETWORK:-proxy}

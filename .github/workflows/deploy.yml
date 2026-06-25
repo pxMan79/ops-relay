@@ -1,7 +1,7 @@
 # ============================================
-# ops-relay 自动部署（单容器，适配 Nginx Proxy Manager）
+# ops-relay 自动部署（单容器，IP+端口直连）
 # push 到 main → 在自托管 runner 上构建并启动 ops-relay 单容器
-# 反代/HTTPS 由容器外的 NPM 面板处理
+# 访问 http://<host>:8001，不经 NPM
 # ============================================
 
 name: Deploy ops-relay
@@ -21,10 +21,6 @@ jobs:
           cd /opt/ops-relay
           git fetch --all
           git reset --hard origin/main
-
-      - name: Ensure NPM proxy network
-        run: |
-          docker network inspect proxy >/dev/null 2>&1 || docker network create proxy
 
       - name: Remove legacy frontend/backend containers
         run: |
