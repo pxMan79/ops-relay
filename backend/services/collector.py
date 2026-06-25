@@ -655,6 +655,59 @@ def get_windows_ssh_data() -> List[Dict[str, Any]]:
     return data_list
 
 
+def _winrm_conn_vars(host: str) -> Dict[str, Any]:
+    """用 ansible-inventory 解析某 Windows 主机的 WinRM 连接参数（复用 inventory/host_vars 配置）。"""
+    try:
+        result = subprocess.run(
+            ["ansible-inventory", "-i", "/etc/ansible/hosts", "--host", host],
+            capture_output=True, text=True, timeout=30,
+        )
+        vars_map = json.loads(result.stdout) if result.stdout.strip() else {}
+    except Exception:
+        vars_map = {}
+    scheme = vars_map.get("ansible_winrm_scheme", "http")
+    port = int(vars_map.get("ansible_port", 5985))
+    return {
+        "endpoint": "%s://%s:%d/wsman" % (scheme, host, port),
+        "user": vars_map.get("ansible_user", "Administrator"),
+        "password": vars_map.get("ansible_password", ""),
+        "transport": vars_map.get("ansible_winrm_transport", "ntlm"),
+        "server_cert_validation": "ignore"
+        if vars_map.get("ansible_winrm_server_cert_validation", "ignore") == "ignore"
+        else "validate",
+    }
+
+
+def collect_one_via_winrm(host: str, ps_script: str) -> tuple:
+    """
+    不走 Ansible，直接用 pywinrm 跑 PowerShell 脚本。
+    用途：老 Windows（PowerShell < 5.1，Ansible 模块门禁过不去）的兜底采集。
+    不改目标服务器——PS3.0+ 即可运行（采集脚本仅用 Get-WmiObject / Get-CimInstance）。
+    成功返回 (stdout, None)，失败返回 (None, errmsg)。
+    """
+    try:
+        import winrm
+    except ImportError:
+        return None, "容器未安装 pywinrm"
+    cv = _winrm_conn_vars(host)
+    if not cv["password"]:
+        return None, "WinRM 兜底：host_vars 缺 ansible_password"
+    try:
+        session = winrm.Session(
+            cv["endpoint"],
+            auth=(cv["user"], cv["password"]),
+            transport=cv["transport"],
+            server_cert_validation=cv["server_cert_validation"],
+        )
+        resp = session.run_ps(ps_script)
+    except Exception as exc:
+        return None, "WinRM 连接失败: %s" % exc
+    if resp.status_code != 0:
+        err = resp.std_err.decode(errors="replace") if resp.std_err else ""
+        return None, "WinRM 执行失败 rc=%d %s" % (resp.status_code, err[:200])
+    return resp.std_out.decode(errors="replace"), None
+
+
 def get_windows_data() -> List[Dict[str, Any]]:
     ps_cmd = build_windows_ps_cmd()
 
@@ -663,49 +716,44 @@ def get_windows_data() -> List[Dict[str, Any]]:
     if not windows_group:
         return []
 
+    # 先尝试 Ansible win_shell（要求目标 PowerShell >= 5.1）
+    ansible_results: Dict[str, Any] = {}
     try:
-        json_data = run_ansible_command("windows", "win_shell", ps_cmd)
-    except Exception as exc:
-        return [
-            make_collection_record(
-                host=host,
-                os_type="windows",
-                group_name="windows",
-                status="failed",
-                error=str(exc),
-            )
-            for host in windows_group
-        ]
+        ansible_results = run_ansible_command("windows", "win_shell", ps_cmd)
+    except Exception:
+        ansible_results = {}
 
     data_list = []
-
     for host in windows_group:
-        info = json_data.get(host)
-        if not info:
+        info = ansible_results.get(host)
+
+        # 1) Ansible 直通成功
+        if info and not info.get("failed") and not info.get("unreachable"):
+            data_list.append(parse_windows_collection_output(host, info.get("stdout", ""), "windows"))
+            continue
+
+        # 2) 真不可达（网络/认证）—— Ansible 和 WinRM 都救不了
+        if info and info.get("unreachable"):
             data_list.append(
                 make_collection_record(
-                    host=host,
-                    os_type="windows",
-                    group_name="windows",
-                    status="missing",
-                    error="Ansible 未返回该主机结果",
+                    host=host, os_type="windows", group_name="windows",
+                    status="unreachable", error=info.get("msg", "采集失败"),
                 )
             )
             continue
 
-        if info.get("failed") or info.get("unreachable"):
+        # 3) Ansible 失败（如老系统 PowerShell<5.1 的模块门禁）→ raw WinRM 兜底，不改目标机
+        stdout, err = collect_one_via_winrm(host, ps_cmd)
+        if stdout is None:
+            ansible_err = info.get("msg", "Ansible 未返回该主机结果") if info else "Ansible 未返回该主机结果"
             data_list.append(
                 make_collection_record(
-                    host=host,
-                    os_type="windows",
-                    group_name="windows",
-                    status="unreachable" if info.get("unreachable") else "failed",
-                    error=info.get("msg", "采集失败"),
+                    host=host, os_type="windows", group_name="windows",
+                    status="failed", error="%s | %s" % (ansible_err, err),
                 )
             )
             continue
-
-        data_list.append(parse_windows_collection_output(host, info.get("stdout", ""), "windows"))
+        data_list.append(parse_windows_collection_output(host, stdout, "windows"))
 
     return data_list
 
