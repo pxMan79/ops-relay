@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { ServerStatus } from "../types/server";
-import { Activity, Cpu, HardDrive, Clock, AlertTriangle } from "lucide-vue-next";
+import { Cpu, HardDrive, Clock, AlertTriangle } from "lucide-vue-next";
 
 interface Props {
   server: ServerStatus;
@@ -42,6 +42,20 @@ const memoryColor = computed(() => {
   if (props.server.memory.usage_percent >= 80) return "text-amber-400";
   return "text-emerald-400";
 });
+
+const memorySizeText = computed(() => {
+  const sizeGb = props.server.hardware?.memory_size_gb || props.server.memory.total_gb || 0;
+  if (!sizeGb) return "-";
+  return Number.isInteger(sizeGb) ? `${sizeGb} GB` : `${sizeGb.toFixed(1)} GB`;
+});
+
+const storageDevices = computed(() => props.server.hardware?.storage_devices || []);
+const gpuDevices = computed(() => props.server.hardware?.gpu_devices || []);
+
+function formatSizeGb(sizeGb: number): string {
+  if (!sizeGb) return "-";
+  return Number.isInteger(sizeGb) ? `${sizeGb} GB` : `${sizeGb.toFixed(1)} GB`;
+}
 </script>
 
 <template>
@@ -120,6 +134,38 @@ const memoryColor = computed(() => {
         <span :class="disk.status === 'critical' ? 'text-red-400' : disk.status === 'warning' ? 'text-amber-400' : 'text-gray-300'">
           {{ disk.usage_percent.toFixed(1) }}%
         </span>
+      </div>
+    </div>
+
+    <!-- 硬件信息 -->
+    <div class="mt-3 pt-3 border-t border-gray-700/50 space-y-2 text-xs">
+      <div class="flex justify-between gap-3">
+        <span class="text-gray-500">内存大小</span>
+        <span class="text-gray-300 font-mono">{{ memorySizeText }}</span>
+      </div>
+
+      <div class="flex items-start justify-between gap-3">
+        <span class="text-gray-500 shrink-0">硬盘</span>
+        <div class="text-right text-gray-300 space-y-1">
+          <template v-if="storageDevices.length > 0">
+            <p v-for="disk in storageDevices.slice(0, 2)" :key="`${disk.name}-${disk.model}`">
+              {{ disk.model || disk.name }} · {{ formatSizeGb(disk.size_gb) }}
+            </p>
+          </template>
+          <p v-else>-</p>
+        </div>
+      </div>
+
+      <div class="flex items-start justify-between gap-3">
+        <span class="text-gray-500 shrink-0">显卡</span>
+        <div class="text-right text-gray-300 space-y-1">
+          <template v-if="gpuDevices.length > 0">
+            <p v-for="gpu in gpuDevices.slice(0, 2)" :key="`${gpu.name}-${gpu.driver}`">
+              {{ gpu.name }}<span v-if="gpu.memory_text"> · {{ gpu.memory_text }}</span>
+            </p>
+          </template>
+          <p v-else>-</p>
+        </div>
       </div>
     </div>
 

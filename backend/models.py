@@ -18,6 +18,26 @@ class MemoryInfo(BaseModel):
     status: str = "normal"
 
 
+class StorageDeviceInfo(BaseModel):
+    name: str = ""
+    model: str = ""
+    size_gb: float = 0.0
+
+
+class GpuInfo(BaseModel):
+    name: str = ""
+    vendor: str = ""
+    memory_mb: float = 0.0
+    memory_text: str = ""
+    driver: str = ""
+
+
+class HardwareInfo(BaseModel):
+    memory_size_gb: float = 0.0
+    storage_devices: List[StorageDeviceInfo] = Field(default_factory=list)
+    gpu_devices: List[GpuInfo] = Field(default_factory=list)
+
+
 class ServerStatusResponse(BaseModel):
     id: int
     ip: str
@@ -33,6 +53,7 @@ class ServerStatusResponse(BaseModel):
     disks: List[DiskInfo] = Field(default_factory=list)
     system_disk_text: str = ""
     data_disk_text: str = ""
+    hardware: HardwareInfo = Field(default_factory=HardwareInfo)
     last_update: Optional[datetime] = None
     overall_status: str = "normal"
     collection_status: str = "success"

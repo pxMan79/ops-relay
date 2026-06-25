@@ -65,6 +65,12 @@ id_rsa*
 known_hosts
 /tmp/ansible_out_*
 
+# 分钥脚本用到的明文凭据（跑完请手动删除此文件）
+scripts/.servers.secret.json
+
+# Windows WinRM 密码（host_vars，挂载进容器，Ansible 自动加载，不入 git）
+host_vars/*.yml
+
 # ==================== Docker ====================
 .docker/
 

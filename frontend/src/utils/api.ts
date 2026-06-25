@@ -1,7 +1,8 @@
 import axios from "axios";
 import type { ServerListResponse, CollectResponse } from "../types/server";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+// Default to same-origin so production can use Nginx /api proxy safely.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").trim();
 
 const api = axios.create({
   baseURL: API_BASE_URL,

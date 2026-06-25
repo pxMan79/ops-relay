@@ -13,6 +13,26 @@ export interface MemoryInfo {
   status: "normal" | "warning" | "critical";
 }
 
+export interface StorageDeviceInfo {
+  name: string;
+  model: string;
+  size_gb: number;
+}
+
+export interface GpuInfo {
+  name: string;
+  vendor: string;
+  memory_mb: number;
+  memory_text: string;
+  driver: string;
+}
+
+export interface HardwareInfo {
+  memory_size_gb: number;
+  storage_devices: StorageDeviceInfo[];
+  gpu_devices: GpuInfo[];
+}
+
 export interface ServerStatus {
   id: number;
   ip: string;
@@ -28,6 +48,7 @@ export interface ServerStatus {
   disks: DiskInfo[];
   system_disk_text: string;
   data_disk_text: string;
+  hardware: HardwareInfo;
   last_update: string | null;
   overall_status: "normal" | "warning" | "critical" | "offline";
   collection_status: "success" | "failed" | "unreachable" | "missing";

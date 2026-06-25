@@ -17,6 +17,7 @@ services:
       - ./data/db:/app/data
       - ~/.ssh:/root/.ssh:ro
       - ${ANSIBLE_INVENTORY_PATH:-./inventory.ini}:/etc/ansible/hosts:ro
+      - ./host_vars:/etc/ansible/host_vars:ro
       - ./logs/backend:/app/logs
     environment:
       - TZ=Asia/Shanghai
