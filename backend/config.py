@@ -18,6 +18,7 @@ class AlertThresholdsConfig(BaseModel):
     memory: AlertThreshold = AlertThreshold()
     disk: AlertThreshold = Field(default_factory=lambda: AlertThreshold(warning=85, critical=95))
     cpu: AlertThreshold = Field(default_factory=lambda: AlertThreshold(warning=85, critical=95))
+    swap: AlertThreshold = Field(default_factory=lambda: AlertThreshold(warning=70, critical=90))
 
 
 class DingtalkConfig(BaseModel):

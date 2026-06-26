@@ -96,4 +96,14 @@ def _calculate_overall_status(server_data: dict) -> str:
         except Exception:
             pass
 
+    # swap 大量使用 = 真实内存压力(在换页)
+    metrics = server_data.get("metrics") or {}
+    swap_total = metrics.get("swap_total_mb", 0) or 0
+    if swap_total > 0:
+        swap_pct = ((metrics.get("swap_used_mb", 0) or 0) / swap_total) * 100
+        if swap_pct >= thresholds.swap.critical:
+            return "critical"
+        if swap_pct >= thresholds.swap.warning:
+            return "warning"
+
     return "normal"

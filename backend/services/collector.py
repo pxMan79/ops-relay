@@ -216,7 +216,7 @@ def parse_gpu_devices(lines: List[str]) -> List[Dict[str, Any]]:
     return devices
 
 
-def build_windows_ps_cmd(include_net: bool = True) -> str:
+def build_windows_ps_cmd(include_net: bool = True, include_topproc: bool = True) -> str:
     # 老 Windows(2012R2) 的 WinRM run_ps 脚本长度有 ~3KB 上限，带 NET 段会超限
     # 导致整脚本输出丢失。win_shell 路径(PS5.1)不受限用默认 True；
     # run_ps 兜底路径(254)用 include_net=False 牺牲网卡流量换稳定。
@@ -263,6 +263,8 @@ def build_windows_ps_cmd(include_net: bool = True) -> str:
     ]
     if include_net:
         outputs.append('Write-Output "---NET---"; Write-Output "$netRx $netTx"')
+    if include_topproc:
+        outputs.append('Write-Output "---TOPPROC---"; try{Get-Process | Sort-Object WS -Descending | Select-Object -First 5 | ForEach-Object{Write-Output ("{0}|{1}" -f [math]::Round($_.WS/1MB,1), $_.Name)}}catch{}')
     return "".join(vars_ + outputs)
 
 
@@ -286,6 +288,7 @@ def parse_windows_collection_output(
     tcp_conns = 0
     net_rx_bytes = 0
     net_tx_bytes = 0
+    top_procs = []
     mode = ""
 
     for line in stdout.split("\n"):
@@ -355,6 +358,14 @@ def parse_windows_collection_output(
                 net_rx_bytes = int(safe_float(parts[0]))
                 net_tx_bytes = int(safe_float(parts[1]))
             mode = ""
+        elif mode == "TOPPROC" and "|" in line:
+            parts = line.split("|", 1)
+            if len(parts) == 2:
+                top_procs.append({
+                    "name": parts[1].strip()[:40],
+                    "rss_mb": safe_float(parts[0]),
+                    "mem_pct": 0.0,
+                })
 
     data_disk_str = "\n".join(data_disks) if data_disks else "无数据盘"
     return make_collection_record(
@@ -382,6 +393,7 @@ def parse_windows_collection_output(
             "tcp_conns": tcp_conns,
             "net_rx_bytes": net_rx_bytes,
             "net_tx_bytes": net_tx_bytes,
+            "top_processes": top_procs,
         },
     )
 
@@ -394,6 +406,9 @@ def check_alert_status(value: float, alert_type: str) -> str:
     elif alert_type == "disk":
         warning = thresholds.disk.warning
         critical = thresholds.disk.critical
+    elif alert_type == "swap":
+        warning = thresholds.swap.warning
+        critical = thresholds.swap.critical
     else:  # cpu
         warning = thresholds.cpu.warning
         critical = thresholds.cpu.critical
@@ -500,7 +515,8 @@ def get_linux_data() -> List[Dict[str, Any]]:
         'echo "---KERNEL---"; uname -r; '
         'echo "---HOSTNAME---"; hostname; '
         'echo "---TCP---"; awk "NR>1" /proc/net/tcp 2>/dev/null | wc -l; '
-        'echo "---NET---"; cat /proc/net/dev'
+        'echo "---NET---"; cat /proc/net/dev; '
+        'echo "---TOPPROC---"; ps -eo rss,%mem,comm --sort=-rss --no-headers 2>/dev/null | head -5'
     )
 
     groups = config_loader.get_server_groups()
@@ -575,6 +591,7 @@ def get_linux_data() -> List[Dict[str, Any]]:
         tcp_conns = 0
         net_rx_bytes = 0
         net_tx_bytes = 0
+        top_procs = []
         mode = ""
 
         for line in stdout.split("\n"):
@@ -668,6 +685,14 @@ def get_linux_data() -> List[Dict[str, Any]]:
                     if len(nums) >= 9:
                         net_rx_bytes += int(safe_float(nums[0]))
                         net_tx_bytes += int(safe_float(nums[8]))
+            elif mode == "TOPPROC":
+                parts = line.split(None, 2)
+                if len(parts) >= 3:
+                    top_procs.append({
+                        "name": parts[2].strip()[:40],
+                        "rss_mb": round(safe_float(parts[0]) / 1024, 1),
+                        "mem_pct": safe_float(parts[1]),
+                    })
 
         if memory_total_mb <= 0 and mem_from_free_total is not None:
             memory_total_mb = mem_from_free_total
@@ -716,6 +741,7 @@ def get_linux_data() -> List[Dict[str, Any]]:
                     "tcp_conns": tcp_conns,
                     "net_rx_bytes": net_rx_bytes,
                     "net_tx_bytes": net_tx_bytes,
+                    "top_processes": top_procs,
                 },
             )
         )
@@ -876,7 +902,7 @@ def get_windows_data() -> List[Dict[str, Any]]:
 
         # 3) Ansible 失败（如老系统 PowerShell<5.1 的模块门禁）→ raw WinRM 兜底，不改目标机
         #    run_ps 路径用 include_net=False：老 Windows 脚本长度有上限，牺牲网卡流量换稳定
-        stdout, err = collect_one_via_winrm(host, build_windows_ps_cmd(include_net=False))
+        stdout, err = collect_one_via_winrm(host, build_windows_ps_cmd(include_net=False, include_topproc=False))
         if stdout is None:
             ansible_err = info.get("msg", "Ansible 未返回该主机结果") if info else "Ansible 未返回该主机结果"
             data_list.append(
@@ -1057,6 +1083,7 @@ class CollectorService:
                         "tcp_conns": item.get("tcp_conns", 0),
                         "net_rx_bytes": item.get("net_rx_bytes", 0),
                         "net_tx_bytes": item.get("net_tx_bytes", 0),
+                        "top_processes": item.get("top_processes", []),
                     },
                     uptime_seconds=int(item.get("uptime_seconds", 0) or 0),
                     collected_at=datetime.utcnow(),
@@ -1074,6 +1101,13 @@ class CollectorService:
                     self._check_and_create_alert(
                         db_session, server.id, "cpu", cpu_usage, ip
                     )
+                    # swap 大量使用=真实内存压力(在换页), 有 swap 才判
+                    swap_total_mb = float(item.get("swap_total_mb", 0.0) or 0.0)
+                    if swap_total_mb > 0:
+                        swap_pct = (float(item.get("swap_used_mb", 0.0) or 0.0) / swap_total_mb) * 100
+                        self._check_and_create_alert(
+                            db_session, server.id, "swap", swap_pct, ip
+                        )
 
                 # 更新服务器最后更新时间
                 server.updated_at = datetime.utcnow()
@@ -1122,6 +1156,12 @@ class CollectorService:
                     thresholds.disk.critical
                     if status == "critical"
                     else thresholds.disk.warning
+                )
+            elif alert_type == "swap":
+                threshold = (
+                    thresholds.swap.critical
+                    if status == "critical"
+                    else thresholds.swap.warning
                 )
             else:
                 threshold = (
@@ -1245,6 +1285,7 @@ class CollectorService:
                         "net_rx_bytes": disks_info.get("net_rx_bytes", 0),
                         "net_tx_bytes": disks_info.get("net_tx_bytes", 0),
                     },
+                    "top_processes": disks_info.get("top_processes", []),
                     "hardware": {
                         "memory_size_gb": round((snap.memory_total_mb or 0.0) / 1024, 1),
                         "storage_devices": storage_devices if isinstance(storage_devices, list) else [],

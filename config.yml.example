@@ -31,6 +31,9 @@ alert_thresholds:
   cpu:
     warning: 85
     critical: 95
+  swap:
+    warning: 70      # swap 用量 70% 警告(在换页, 真实内存压力)
+    critical: 90     # 90% 严重
 
 # 钉钉通知配置（⚠️ 敏感信息 - 已脱敏）
 dingtalk:

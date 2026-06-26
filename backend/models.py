@@ -50,6 +50,12 @@ class MetricsInfo(BaseModel):
     net_tx_bytes: int = 0
 
 
+class TopProcessInfo(BaseModel):
+    name: str = ""
+    rss_mb: float = 0.0
+    mem_pct: float = 0.0
+
+
 class ServerStatusResponse(BaseModel):
     id: int
     ip: str
@@ -69,6 +75,7 @@ class ServerStatusResponse(BaseModel):
     kernel: str = ""
     real_hostname: str = ""
     metrics: MetricsInfo = Field(default_factory=MetricsInfo)
+    top_processes: List[TopProcessInfo] = Field(default_factory=list)
     hardware: HardwareInfo = Field(default_factory=HardwareInfo)
     last_update: Optional[datetime] = None
     overall_status: str = "normal"
