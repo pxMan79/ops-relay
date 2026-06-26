@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
-import { Activity, Cpu, HardDrive, AlertTriangle, RefreshCw, Download } from "lucide-vue-next";
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import { Activity, Cpu, HardDrive, MemoryStick, AlertTriangle, RefreshCw, Download } from "lucide-vue-next";
 import ServerCard from "../components/ServerCard.vue";
 import ServerTrendModal from "../components/ServerTrendModal.vue";
 import { fetchServers, triggerCollect } from "../utils/api";
@@ -12,6 +12,19 @@ const loading = ref(false);
 const collecting = ref(false);
 const lastUpdate = ref<Date | null>(null);
 const selectedIp = ref<string | null>(null);
+
+// 统计聚合
+const successServers = computed(() => servers.value.filter((s: any) => s.collection_status === "success"));
+function mean(vals: number[]): number {
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+}
+const avgCpu = computed(() => mean(successServers.value.map((s: any) => s.cpu_usage || 0)).toFixed(1));
+const avgMem = computed(() => mean(successServers.value.map((s: any) => s.memory?.usage_percent || 0)).toFixed(1));
+const avgDisk = computed(() => mean(successServers.value.map((s: any) => s.disks?.[0]?.usage_percent || 0)).toFixed(1));
+const warnCount = computed(() => servers.value.filter((s: any) => s.overall_status === "warning").length);
+const critCount = computed(() => servers.value.filter((s: any) => s.overall_status === "critical").length);
+const offlineCount = computed(() => servers.value.filter((s: any) => s.overall_status === "offline").length);
+const avgCpuColor = (v: number) => (v >= 80 ? "text-red-400" : v >= 60 ? "text-amber-400" : "text-emerald-400");
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 // 加载服务器数据
@@ -109,66 +122,85 @@ onUnmounted(() => {
     <!-- 主内容区 -->
     <main class="max-w-7xl mx-auto px-6 py-8">
       <!-- 统计卡片区 -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <!-- 总服务器数 -->
-        <div class="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50 backdrop-blur-sm">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-slate-400 mb-1">总服务器</p>
-              <p class="text-3xl font-bold font-mono text-white">{{ meta.total }}</p>
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+        <!-- 总服务器 -->
+        <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
+              <Activity class="w-5 h-5 text-blue-400" />
             </div>
-            <div class="w-12 h-12 rounded-lg bg-blue-500/20 flex items-center justify-center">
-              <Activity class="w-6 h-6 text-blue-400" />
-            </div>
-          </div>
-        </div>
-
-        <!-- 在线数量 -->
-        <div class="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50 backdrop-blur-sm">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-slate-400 mb-1">在线</p>
-              <p class="text-3xl font-bold font-mono text-emerald-400">{{ meta.online }}</p>
-            </div>
-            <div class="w-12 h-12 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-              <Activity class="w-6 h-6 text-emerald-400" />
+            <div class="min-w-0">
+              <p class="text-xs text-slate-400">总服务器</p>
+              <p class="text-2xl font-bold font-mono text-white">{{ meta.total }}</p>
             </div>
           </div>
         </div>
 
-        <!-- 告警数量 -->
-        <div class="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50 backdrop-blur-sm">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-slate-400 mb-1">告警</p>
-              <p class="text-3xl font-bold font-mono text-amber-400">{{ meta.alert_count }}</p>
+        <!-- 在线 / 离线 -->
+        <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0">
+              <Activity class="w-5 h-5 text-emerald-400" />
             </div>
-            <div class="w-12 h-12 rounded-lg bg-amber-500/20 flex items-center justify-center">
-              <AlertTriangle class="w-6 h-6 text-amber-400" />
-            </div>
-          </div>
-        </div>
-
-        <!-- 平均CPU使用率 -->
-        <div class="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50 backdrop-blur-sm">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-slate-400 mb-1">平均 CPU</p>
-              <p class="text-3xl font-bold font-mono text-cyan-400">
-                {{
-                  servers.filter((s) => s.collection_status === "success").length > 0
-                    ? (
-                        servers
-                          .filter((s) => s.collection_status === "success")
-                          .reduce((sum, s) => sum + s.cpu_usage, 0) /
-                        servers.filter((s) => s.collection_status === "success").length
-                      ).toFixed(1)
-                    : 0
-                }}%
+            <div class="min-w-0">
+              <p class="text-xs text-slate-400">在线 / 离线</p>
+              <p class="text-2xl font-bold font-mono">
+                <span class="text-emerald-400">{{ meta.online }}</span><span class="text-slate-500 text-base"> / {{ offlineCount }}</span>
               </p>
             </div>
-            <div class="w-12 h-12 rounded-lg bg-cyan-500/20 flex items-center justify-center">
-              <Cpu class="w-6 h-6 text-cyan-400" />
+          </div>
+        </div>
+
+        <!-- 告警细分 -->
+        <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
+              <AlertTriangle class="w-5 h-5 text-amber-400" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-xs text-slate-400">告警 警 / 严</p>
+              <p class="text-2xl font-bold font-mono">
+                <span class="text-amber-400">{{ warnCount }}</span><span class="text-slate-500 text-base"> / </span><span class="text-red-400">{{ critCount }}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 平均 CPU -->
+        <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center shrink-0">
+              <Cpu class="w-5 h-5 text-cyan-400" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-xs text-slate-400">平均 CPU</p>
+              <p :class="['text-2xl font-bold font-mono', avgCpuColor(parseFloat(avgCpu))]">{{ avgCpu }}%</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 平均内存 -->
+        <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-fuchsia-500/20 flex items-center justify-center shrink-0">
+              <MemoryStick class="w-5 h-5 text-fuchsia-400" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-xs text-slate-400">平均内存</p>
+              <p :class="['text-2xl font-bold font-mono', avgCpuColor(parseFloat(avgMem))]">{{ avgMem }}%</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 平均磁盘 -->
+        <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center shrink-0">
+              <HardDrive class="w-5 h-5 text-orange-400" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-xs text-slate-400">平均磁盘</p>
+              <p :class="['text-2xl font-bold font-mono', avgCpuColor(parseFloat(avgDisk))]">{{ avgDisk }}%</p>
             </div>
           </div>
         </div>
