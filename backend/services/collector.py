@@ -359,8 +359,9 @@ def make_collection_record(
     uptime_seconds: int = 0,
     storage_devices: Optional[List[Dict[str, Any]]] = None,
     gpu_devices: Optional[List[Dict[str, Any]]] = None,
+    extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    return {
+    record = {
         "服务器IP": host,
         "系统版本": os_ver,
         "运行时间": uptime,
@@ -378,6 +379,9 @@ def make_collection_record(
         "storage_devices": storage_devices or [],
         "gpu_devices": gpu_devices or [],
     }
+    if extra:
+        record.update(extra)
+    return record
 
 
 def get_linux_data() -> List[Dict[str, Any]]:
@@ -427,7 +431,13 @@ def get_linux_data() -> List[Dict[str, Any]]:
         'echo "---DISK---"; df -hP; '
         'echo "---DISKHW---"; ' + disk_hw_cmd + '; '
         'echo "---GPU---"; ' + gpu_cmd + '; '
-        'echo "---UPTIME---"; cat /proc/uptime'
+        'echo "---UPTIME---"; cat /proc/uptime; '
+        'echo "---LOADAVG---"; cat /proc/loadavg; '
+        'echo "---CORES---"; nproc; '
+        'echo "---KERNEL---"; uname -r; '
+        'echo "---HOSTNAME---"; hostname; '
+        'echo "---TCP---"; awk "NR>1" /proc/net/tcp 2>/dev/null | wc -l; '
+        'echo "---NET---"; cat /proc/net/dev'
     )
 
     groups = config_loader.get_server_groups()
@@ -492,6 +502,16 @@ def get_linux_data() -> List[Dict[str, Any]]:
         mem_from_legacy_used = None
         mem_from_legacy_remain = None
         mem_available_mb = None
+        swap_total_mb = 0.0
+        swap_used_mb = 0.0
+        load1 = load5 = load15 = 0.0
+        procs_total = 0
+        cpu_cores = 0
+        kernel = ""
+        real_hostname = ""
+        tcp_conns = 0
+        net_rx_bytes = 0
+        net_tx_bytes = 0
         mode = ""
 
         for line in stdout.split("\n"):
@@ -522,6 +542,11 @@ def get_linux_data() -> List[Dict[str, Any]]:
                 if len(parts) >= 2:
                     mem_from_legacy_used = safe_float(parts[-2])
                     mem_from_legacy_remain = safe_float(parts[-1])
+            elif mode == "MEM" and line.startswith("Swap:"):
+                parts = line.split()
+                if len(parts) >= 4:
+                    swap_total_mb = safe_float(parts[1])
+                    swap_used_mb = safe_float(parts[2])
             elif mode == "MEMINFO":
                 if line.startswith("MemTotal:"):
                     memory_total_mb = safe_float(line.split()[1]) / 1024
@@ -550,6 +575,36 @@ def get_linux_data() -> List[Dict[str, Any]]:
                 uptime = format_uptime(line)
                 uptime_seconds = parse_uptime_seconds(line)
                 mode = ""
+            elif mode == "LOADAVG":
+                parts = line.split()
+                if len(parts) >= 3:
+                    load1, load5, load15 = (
+                        safe_float(parts[0]),
+                        safe_float(parts[1]),
+                        safe_float(parts[2]),
+                    )
+                    if len(parts) >= 4 and "/" in parts[3]:
+                        procs_total = int(safe_float(parts[3].split("/")[1]))
+                mode = ""
+            elif mode == "CORES":
+                cpu_cores = int(safe_float(line))
+                mode = ""
+            elif mode == "KERNEL":
+                kernel = line.strip()
+                mode = ""
+            elif mode == "HOSTNAME":
+                real_hostname = line.strip()
+                mode = ""
+            elif mode == "TCP":
+                tcp_conns = int(safe_float(line))
+                mode = ""
+            elif mode == "NET" and ":" in line:
+                namepart, _, rest = line.partition(":")
+                if namepart.strip() != "lo":
+                    nums = rest.split()
+                    if len(nums) >= 9:
+                        net_rx_bytes += int(safe_float(nums[0]))
+                        net_tx_bytes += int(safe_float(nums[8]))
 
         if memory_total_mb <= 0 and mem_from_free_total is not None:
             memory_total_mb = mem_from_free_total
@@ -585,6 +640,20 @@ def get_linux_data() -> List[Dict[str, Any]]:
                 uptime_seconds=uptime_seconds,
                 storage_devices=storage_devices,
                 gpu_devices=gpu_devices,
+                extra={
+                    "swap_total_mb": swap_total_mb,
+                    "swap_used_mb": swap_used_mb,
+                    "load1": load1,
+                    "load5": load5,
+                    "load15": load15,
+                    "procs_total": procs_total,
+                    "cpu_cores": cpu_cores,
+                    "kernel": kernel,
+                    "real_hostname": real_hostname,
+                    "tcp_conns": tcp_conns,
+                    "net_rx_bytes": net_rx_bytes,
+                    "net_tx_bytes": net_tx_bytes,
+                },
             )
         )
 
@@ -912,6 +981,18 @@ class CollectorService:
                         "collection_error": collection_error,
                         "group_name": group_name,
                         "os_type": os_type,
+                        "swap_total_mb": item.get("swap_total_mb", 0.0),
+                        "swap_used_mb": item.get("swap_used_mb", 0.0),
+                        "load1": item.get("load1", 0.0),
+                        "load5": item.get("load5", 0.0),
+                        "load15": item.get("load15", 0.0),
+                        "procs_total": item.get("procs_total", 0),
+                        "cpu_cores": item.get("cpu_cores", 0),
+                        "kernel": item.get("kernel", ""),
+                        "real_hostname": item.get("real_hostname", ""),
+                        "tcp_conns": item.get("tcp_conns", 0),
+                        "net_rx_bytes": item.get("net_rx_bytes", 0),
+                        "net_tx_bytes": item.get("net_tx_bytes", 0),
                     },
                     uptime_seconds=int(item.get("uptime_seconds", 0) or 0),
                     collected_at=datetime.utcnow(),
@@ -1086,6 +1167,20 @@ class CollectorService:
                     "disks": [d.dict() for d in disks_list],
                     "system_disk_text": system_disk,
                     "data_disk_text": data_disks,
+                    "cpu_cores": disks_info.get("cpu_cores", 0),
+                    "kernel": disks_info.get("kernel", ""),
+                    "real_hostname": disks_info.get("real_hostname", ""),
+                    "metrics": {
+                        "swap_total_mb": disks_info.get("swap_total_mb", 0.0),
+                        "swap_used_mb": disks_info.get("swap_used_mb", 0.0),
+                        "load1": disks_info.get("load1", 0.0),
+                        "load5": disks_info.get("load5", 0.0),
+                        "load15": disks_info.get("load15", 0.0),
+                        "procs_total": disks_info.get("procs_total", 0),
+                        "tcp_conns": disks_info.get("tcp_conns", 0),
+                        "net_rx_bytes": disks_info.get("net_rx_bytes", 0),
+                        "net_tx_bytes": disks_info.get("net_tx_bytes", 0),
+                    },
                     "hardware": {
                         "memory_size_gb": round((snap.memory_total_mb or 0.0) / 1024, 1),
                         "storage_devices": storage_devices if isinstance(storage_devices, list) else [],

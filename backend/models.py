@@ -38,6 +38,18 @@ class HardwareInfo(BaseModel):
     gpu_devices: List[GpuInfo] = Field(default_factory=list)
 
 
+class MetricsInfo(BaseModel):
+    swap_total_mb: float = 0.0
+    swap_used_mb: float = 0.0
+    load1: float = 0.0
+    load5: float = 0.0
+    load15: float = 0.0
+    procs_total: int = 0
+    tcp_conns: int = 0
+    net_rx_bytes: int = 0
+    net_tx_bytes: int = 0
+
+
 class ServerStatusResponse(BaseModel):
     id: int
     ip: str
@@ -53,6 +65,10 @@ class ServerStatusResponse(BaseModel):
     disks: List[DiskInfo] = Field(default_factory=list)
     system_disk_text: str = ""
     data_disk_text: str = ""
+    cpu_cores: int = 0
+    kernel: str = ""
+    real_hostname: str = ""
+    metrics: MetricsInfo = Field(default_factory=MetricsInfo)
     hardware: HardwareInfo = Field(default_factory=HardwareInfo)
     last_update: Optional[datetime] = None
     overall_status: str = "normal"
