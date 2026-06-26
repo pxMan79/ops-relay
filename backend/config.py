@@ -25,6 +25,7 @@ class DingtalkConfig(BaseModel):
     enabled: bool = False
     webhook_url: str = ""
     secret: str = ""
+    keyword: str = ""
     mention_all: bool = False
     mention_mobiles: List[str] = []
 

@@ -39,7 +39,8 @@ alert_thresholds:
 dingtalk:
   enabled: false  # 测试阶段建议关闭
   webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_YOUR_TOKEN"
-  secret: "REPLACE_WITH_YOUR_SIGNING_SECRET"  # 可选：加签密钥
+  secret: "REPLACE_WITH_YOUR_SIGNING_SECRET"  # 可选：加签密钥(安全设置选"加签"时填)
+  keyword: ""  # 可选：安全设置选"自定义关键词"时填(如 巡检), 告警文案会自动带上
   mention_all: false  # 是否 @所有人
   mention_mobiles: []  # @指定手机号
 

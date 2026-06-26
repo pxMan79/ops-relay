@@ -9,6 +9,11 @@ from datetime import datetime, timezone
 from config import config_loader
 
 
+def _kw_prefix(dingtalk) -> str:
+    """钉钉"关键词"安全设置：消息须含关键词才不会被拒。返回带空格前缀(无则空串)。"""
+    return (dingtalk.keyword + " ") if getattr(dingtalk, "keyword", "") else ""
+
+
 def send_dingtalk_alert_sync(
     server_ip: str,
     alert_type: str,
@@ -26,7 +31,7 @@ def send_dingtalk_alert_sync(
 
     title = f"{severity_text} {type_text}告警 - {server_ip}"
     text = (
-        f"### {title}\n\n"
+        f"### {_kw_prefix(dingtalk)}{title}\n\n"
         f"- **服务器**: {server_ip}\n"
         f"- **指标**: {type_text}使用率\n"
         f"- **当前值**: {actual_value:.1f}%\n"
@@ -73,7 +78,7 @@ def send_dingtalk_recovery_sync(server_ip: str, alert_type: str):
     type_text = {"memory": "内存", "disk": "磁盘", "cpu": "CPU"}.get(alert_type, alert_type)
     title = f"✅ 恢复通知 - {server_ip}"
     text = (
-        f"### {title}\n\n"
+        f"### {_kw_prefix(dingtalk)}{title}\n\n"
         f"- **服务器**: {server_ip}\n"
         f"- **指标**: {type_text}使用率已恢复正常\n"
         f"- **时间**: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
@@ -108,7 +113,7 @@ async def send_dingtalk_alert(
 
     title = f"{severity_text} {type_text}告警 - {server_ip}"
     text = (
-        f"### {title}\n\n"
+        f"### {_kw_prefix(dingtalk)}{title}\n\n"
         f"- **服务器**: {server_ip}\n"
         f"- **指标**: {type_text}使用率\n"
         f"- **当前值**: {actual_value:.1f}%\n"
@@ -156,7 +161,7 @@ async def send_dingtalk_recovery(server_ip: str, alert_type: str):
     type_text = {"memory": "内存", "disk": "磁盘", "cpu": "CPU"}.get(alert_type, alert_type)
     title = f"✅ 恢复通知 - {server_ip}"
     text = (
-        f"### {title}\n\n"
+        f"### {_kw_prefix(dingtalk)}{title}\n\n"
         f"- **服务器**: {server_ip}\n"
         f"- **指标**: {type_text}使用率已恢复正常\n"
         f"- **时间**: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
