@@ -48,6 +48,16 @@ const swapPct = computed(() => {
   const t = m.value.swap_total_mb || 0;
   return t > 0 ? ((m.value.swap_used_mb || 0) / t) * 100 : 0;
 });
+// Swap 是"真实内存压力"的铁证(区别于可回收缓存): 高=在换页=真紧张
+const swapColor = computed(() => {
+  if (!ok.value) return "text-slate-400";
+  if ((m.value.swap_total_mb || 0) <= 0) return "text-slate-500";
+  const p = swapPct.value;
+  if (p >= 90) return "text-red-400";
+  if (p >= 70) return "text-amber-400";
+  if (p >= 40) return "text-yellow-400";
+  return "text-emerald-400";
+});
 const swapText = computed(() => {
   const t = m.value.swap_total_mb || 0;
   if (t <= 0) return "无 Swap";
@@ -176,7 +186,7 @@ function diskColor(pct: number): string {
       </div>
       <div class="text-center">
         <p class="text-[10px] text-gray-500">Swap</p>
-        <p :class="['text-xs font-mono font-bold', thrColor(swapPct)]">{{ swapText.split(' · ')[0] }}</p>
+        <p :class="['text-xs font-mono font-bold', swapColor]">{{ swapText.split(' · ')[0] }}</p>
       </div>
       <div class="text-center">
         <p class="text-[10px] text-gray-500">负载</p>
@@ -192,7 +202,10 @@ function diskColor(pct: number): string {
       </div>
       <div class="flex justify-between gap-2">
         <span class="flex items-center gap-1"><Activity :size="12" />Swap</span>
-        <span class="text-gray-300 font-mono truncate">{{ swapText }}</span>
+        <span :class="['font-mono truncate', swapColor]">
+          {{ swapText }}
+          <span v-if="swapPct >= 70" class="ml-1 text-[10px] text-red-400">⚠换页</span>
+        </span>
       </div>
       <div class="flex justify-between gap-2">
         <span class="flex items-center gap-1"><Cpu :size="12" />负载(1/5/15)</span>
