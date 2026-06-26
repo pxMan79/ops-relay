@@ -216,44 +216,54 @@ def parse_gpu_devices(lines: List[str]) -> List[Dict[str, Any]]:
     return devices
 
 
-def build_windows_ps_cmd() -> str:
-    return (
-        '$ProgressPreference="SilentlyContinue"; '
-        '$os=(Get-WmiObject Win32_OperatingSystem).Caption.Replace("Microsoft Windows ","Win ").Replace(" 专业版"," Pro"); '
-        "$cpu=(Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; "
-        "$mem=Get-WmiObject Win32_OperatingSystem; "
-        "$memTotal=[math]::Round($mem.TotalVisibleMemorySize/1024,0); "
-        "$memUsed=$memTotal-[math]::Round($mem.FreePhysicalMemory/1024,0); "
-        "$memRemain=$memTotal-$memUsed; "
-        "if($memTotal -eq 0){$pct=0}else{$pct=[math]::Round(($memUsed/$memTotal)*100,1)}; "
-        '$disks=Get-WmiObject Win32_LogicalDisk -Filter "DriveType=3"; '
-        '$diskStr=""; '
-        "foreach($d in $disks){$size=[math]::Round($d.Size/1GB,0);$free=[math]::Round($d.FreeSpace/1GB,0);if($size -eq 0){$dpct=0}else{$dpct=[math]::Round((($size-$free)/$size)*100,0)};$diskStr+=\"$($d.DeviceID)|$($size)|$($free)|$dpct,\"}; "
-        '$diskHwStr=""; '
-        '$diskHw=Get-CimInstance Win32_DiskDrive; '
-        'foreach($d in $diskHw){$name=($d.DeviceID -replace "[`r`n|]"," ").Trim();$model=($d.Model -replace "[`r`n|]"," ").Trim();$size=[math]::Round($d.Size/1GB,1);$diskHwStr+="$name|$size|$model`n"}; '
-        '$gpuStr=""; '
-        '$gpus=Get-CimInstance Win32_VideoController; '
-        'foreach($g in $gpus){$name=($g.Name -replace "[`r`n|]"," ").Trim();$vendor=($g.AdapterCompatibility -replace "[`r`n|]"," ").Trim();$driver=($g.DriverVersion -replace "[`r`n|]"," ").Trim();if($g.AdapterRAM){$ram=[math]::Round($g.AdapterRAM/1MB,0)}else{$ram=0};$gpuStr+="$name|$ram|$vendor|$driver`n"}; '
-        "$boot=$mem.LastBootUpTime; $now=Get-Date; $up=$now-[System.Management.ManagementDateTimeConverter]::ToDateTime($boot); $upSecs=[math]::Round($up.TotalSeconds,0); "
-        "$cores=(Get-WmiObject Win32_Processor | Measure-Object NumberOfLogicalProcessors -Sum).Sum; if(-not $cores){$cores=@(Get-WmiObject Win32_Processor).Count}; "
-        "$pf=Get-WmiObject Win32_PageFileUsage; $swapTotal=0; $swapUsed=0; if($pf){$swapTotal=($pf|Measure-Object AllocatedBaseSize -Sum).Sum; $swapUsed=($pf|Measure-Object CurrentUsage -Sum).Sum}; "
-        "$hn=$env:COMPUTERNAME; "
-        "$ver=(Get-WmiObject Win32_OperatingSystem).Version; "
-        "$tcp=(Get-NetTCPConnection -ErrorAction SilentlyContinue | Measure-Object).Count; if(-not $tcp){$tcp=0}; "
-        'Write-Output "---OS---"; Write-Output $os; '
-        'Write-Output "---CPU---"; Write-Output $cpu; '
-        'Write-Output "---MEM---"; Write-Output "$memTotal $memRemain $pct"; '
-        'Write-Output "---DISK---"; Write-Output $diskStr; '
-        'Write-Output "---DISKHW---"; Write-Output $diskHwStr; '
-        'Write-Output "---GPU---"; Write-Output $gpuStr; '
-        'Write-Output "---UPTIME---"; Write-Output $upSecs; '
-        'Write-Output "---SWAP---"; Write-Output "$swapTotal $swapUsed"; '
-        'Write-Output "---CORES---"; Write-Output $cores; '
-        'Write-Output "---KERNEL---"; Write-Output $ver; '
-        'Write-Output "---HOSTNAME---"; Write-Output $hn; '
-        'Write-Output "---TCP---"; Write-Output $tcp'
-    )
+def build_windows_ps_cmd(include_net: bool = True) -> str:
+    # 老 Windows(2012R2) 的 WinRM run_ps 脚本长度有 ~3KB 上限，带 NET 段会超限
+    # 导致整脚本输出丢失。win_shell 路径(PS5.1)不受限用默认 True；
+    # run_ps 兜底路径(254)用 include_net=False 牺牲网卡流量换稳定。
+    vars_ = [
+        '$ProgressPreference="SilentlyContinue"; $ErrorActionPreference="SilentlyContinue"; ',
+        '$os=(Get-WmiObject Win32_OperatingSystem).Caption.Replace("Microsoft Windows ","Win ").Replace(" 专业版"," Pro"); ',
+        "$cpu=(Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; ",
+        "$mem=Get-WmiObject Win32_OperatingSystem; ",
+        "$memTotal=[math]::Round($mem.TotalVisibleMemorySize/1024,0); ",
+        "$memUsed=$memTotal-[math]::Round($mem.FreePhysicalMemory/1024,0); ",
+        "$memRemain=$memTotal-$memUsed; ",
+        "if($memTotal -eq 0){$pct=0}else{$pct=[math]::Round(($memUsed/$memTotal)*100,1)}; ",
+        '$disks=Get-WmiObject Win32_LogicalDisk -Filter "DriveType=3"; ',
+        '$diskStr=""; ',
+        "foreach($d in $disks){$size=[math]::Round($d.Size/1GB,0);$free=[math]::Round($d.FreeSpace/1GB,0);if($size -eq 0){$dpct=0}else{$dpct=[math]::Round((($size-$free)/$size)*100,0)};$diskStr+=\"$($d.DeviceID)|$($size)|$($free)|$dpct,\"}; ",
+        '$diskHwStr=""; ',
+        '$diskHw=Get-CimInstance Win32_DiskDrive; ',
+        'foreach($d in $diskHw){$name=($d.DeviceID -replace "[`r`n|]"," ").Trim();$model=($d.Model -replace "[`r`n|]"," ").Trim();$size=[math]::Round($d.Size/1GB,1);$diskHwStr+="$name|$size|$model`n"}; ',
+        '$gpuStr=""; ',
+        '$gpus=Get-CimInstance Win32_VideoController; ',
+        'foreach($g in $gpus){$name=($g.Name -replace "[`r`n|]"," ").Trim();$vendor=($g.AdapterCompatibility -replace "[`r`n|]"," ").Trim();$driver=($g.DriverVersion -replace "[`r`n|]"," ").Trim();if($g.AdapterRAM){$ram=[math]::Round($g.AdapterRAM/1MB,0)}else{$ram=0};$gpuStr+="$name|$ram|$vendor|$driver`n"}; ',
+        "$boot=$mem.LastBootUpTime; $now=Get-Date; $up=$now-[System.Management.ManagementDateTimeConverter]::ToDateTime($boot); $upSecs=[math]::Round($up.TotalSeconds,0); ",
+        "$cores=(Get-WmiObject Win32_Processor | Measure-Object NumberOfLogicalProcessors -Sum).Sum; if(-not $cores){$cores=@(Get-WmiObject Win32_Processor).Count}; ",
+        "$pf=Get-WmiObject Win32_PageFileUsage; $swapTotal=0; $swapUsed=0; if($pf){$swapTotal=($pf|Measure-Object AllocatedBaseSize -Sum).Sum; $swapUsed=($pf|Measure-Object CurrentUsage -Sum).Sum}; ",
+        "$hn=$env:COMPUTERNAME; ",
+        "$ver=(Get-WmiObject Win32_OperatingSystem).Version; ",
+        "$tcp=(Get-NetTCPConnection -ErrorAction SilentlyContinue | Measure-Object).Count; if(-not $tcp){$tcp=0}; ",
+    ]
+    if include_net:
+        vars_.append("$netRx=0; $netTx=0; try{foreach($n in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()){if($n.OperationalStatus -eq 'Up' -and $n.NetworkInterfaceType -ne 'Loopback' -and $n.NetworkInterfaceType -ne 'Tunnel'){$st=$n.GetIPv4Statistics(); $netRx+=$st.BytesReceived; $netTx+=$st.BytesSent}}}catch{}; ")
+    outputs = [
+        'Write-Output "---OS---"; Write-Output $os; ',
+        'Write-Output "---CPU---"; Write-Output $cpu; ',
+        'Write-Output "---MEM---"; Write-Output "$memTotal $memRemain $pct"; ',
+        'Write-Output "---DISK---"; Write-Output $diskStr; ',
+        'Write-Output "---DISKHW---"; Write-Output $diskHwStr; ',
+        'Write-Output "---GPU---"; Write-Output $gpuStr; ',
+        'Write-Output "---UPTIME---"; Write-Output $upSecs; ',
+        'Write-Output "---SWAP---"; Write-Output "$swapTotal $swapUsed"; ',
+        'Write-Output "---CORES---"; Write-Output $cores; ',
+        'Write-Output "---KERNEL---"; Write-Output $ver; ',
+        'Write-Output "---HOSTNAME---"; Write-Output $hn; ',
+        'Write-Output "---TCP---"; Write-Output $tcp; ',
+    ]
+    if include_net:
+        outputs.append('Write-Output "---NET---"; Write-Output "$netRx $netTx"')
+    return "".join(vars_ + outputs)
 
 
 def parse_windows_collection_output(
@@ -274,6 +284,8 @@ def parse_windows_collection_output(
     kernel = ""
     real_hostname = ""
     tcp_conns = 0
+    net_rx_bytes = 0
+    net_tx_bytes = 0
     mode = ""
 
     for line in stdout.split("\n"):
@@ -337,6 +349,12 @@ def parse_windows_collection_output(
         elif mode == "TCP":
             tcp_conns = int(safe_float(line))
             mode = ""
+        elif mode == "NET":
+            parts = line.split()
+            if len(parts) >= 2:
+                net_rx_bytes = int(safe_float(parts[0]))
+                net_tx_bytes = int(safe_float(parts[1]))
+            mode = ""
 
     data_disk_str = "\n".join(data_disks) if data_disks else "无数据盘"
     return make_collection_record(
@@ -362,6 +380,8 @@ def parse_windows_collection_output(
             "kernel": kernel,
             "real_hostname": real_hostname,
             "tcp_conns": tcp_conns,
+            "net_rx_bytes": net_rx_bytes,
+            "net_tx_bytes": net_tx_bytes,
         },
     )
 
@@ -855,7 +875,8 @@ def get_windows_data() -> List[Dict[str, Any]]:
             continue
 
         # 3) Ansible 失败（如老系统 PowerShell<5.1 的模块门禁）→ raw WinRM 兜底，不改目标机
-        stdout, err = collect_one_via_winrm(host, ps_cmd)
+        #    run_ps 路径用 include_net=False：老 Windows 脚本长度有上限，牺牲网卡流量换稳定
+        stdout, err = collect_one_via_winrm(host, build_windows_ps_cmd(include_net=False))
         if stdout is None:
             ansible_err = info.get("msg", "Ansible 未返回该主机结果") if info else "Ansible 未返回该主机结果"
             data_list.append(
