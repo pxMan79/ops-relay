@@ -111,6 +111,17 @@ const memorySizeText = computed(() => {
 });
 const storageDevices = computed(() => props.server.hardware?.storage_devices || []);
 const gpuDevices = computed(() => props.server.hardware?.gpu_devices || []);
+const topProcesses = computed(() => props.server.top_processes || []);
+
+function fmtMb(mb: number): string {
+  if (!mb) return "-";
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)}G` : `${Math.round(mb)}M`;
+}
+function procColor(mb: number): string {
+  if (mb >= 2048) return "text-red-400";
+  if (mb >= 1024) return "text-amber-400";
+  return "text-gray-400";
+}
 
 function formatSizeGb(sizeGb: number): string {
   if (!sizeGb) return "-";
@@ -232,6 +243,15 @@ function diskColor(pct: number): string {
       <div class="flex justify-between text-[11px]">
         <span class="text-emerald-400 font-mono">↓ {{ netRx }}</span>
         <span class="text-sky-400 font-mono">↑ {{ netTx }}</span>
+      </div>
+    </div>
+
+    <!-- Top 内存进程(定位内存泄漏元凶) -->
+    <div v-if="topProcesses.length > 0" class="mb-3 pt-2 border-t border-gray-700/50">
+      <p class="text-[10px] text-gray-500 mb-1">内存占用 Top</p>
+      <div v-for="(p, i) in topProcesses.slice(0, 5)" :key="i" class="flex justify-between text-[11px] mb-0.5 gap-2">
+        <span :class="['font-mono truncate', i === 0 && p.rss_mb >= 1024 ? 'text-amber-400 font-bold' : 'text-gray-400']">{{ p.name }}</span>
+        <span :class="['font-mono shrink-0', procColor(p.rss_mb)]">{{ fmtMb(p.rss_mb) }}</span>
       </div>
     </div>
 

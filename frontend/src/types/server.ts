@@ -33,6 +33,12 @@ export interface HardwareInfo {
   gpu_devices: GpuInfo[];
 }
 
+export interface TopProcessInfo {
+  name: string;
+  rss_mb: number;
+  mem_pct: number;
+}
+
 export interface MetricsInfo {
   swap_total_mb: number;
   swap_used_mb: number;
@@ -64,6 +70,7 @@ export interface ServerStatus {
   kernel: string;
   real_hostname: string;
   metrics: MetricsInfo;
+  top_processes: TopProcessInfo[];
   hardware: HardwareInfo;
   last_update: string | null;
   overall_status: "normal" | "warning" | "critical" | "offline";
