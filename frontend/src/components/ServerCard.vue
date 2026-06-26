@@ -8,6 +8,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const emit = defineEmits<{ click: [] }>();
 
 const statusColor = computed(() => {
   const colors = {
@@ -138,9 +139,10 @@ function diskColor(pct: number): string {
 <template>
   <div
     :class="[
-      'relative rounded-lg border-l-4 p-4 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl flex flex-col',
+      'relative rounded-lg border-l-4 p-4 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl flex flex-col cursor-pointer',
       statusColor,
     ]"
+    @click="emit('click')"
   >
     <!-- 状态徽章 -->
     <div class="absolute top-3 right-3 flex gap-1.5">

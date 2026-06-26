@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from "vue";
 import { Activity, Cpu, HardDrive, AlertTriangle, RefreshCw, Download } from "lucide-vue-next";
 import ServerCard from "../components/ServerCard.vue";
+import ServerTrendModal from "../components/ServerTrendModal.vue";
 import { fetchServers, triggerCollect } from "../utils/api";
 import type { ServerListResponse } from "../types/server";
 
@@ -10,6 +11,7 @@ const meta = ref({ total: 0, online: 0, alert_count: 0 });
 const loading = ref(false);
 const collecting = ref(false);
 const lastUpdate = ref<Date | null>(null);
+const selectedIp = ref<string | null>(null);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 // 加载服务器数据
@@ -199,9 +201,17 @@ onUnmounted(() => {
             v-for="server in servers"
             :key="server.id"
             :server="server"
+            @click="selectedIp = server.ip"
           />
         </div>
       </div>
+    <!-- 历史趋势弹窗 -->
+    <ServerTrendModal
+      v-if="selectedIp"
+      :ip="selectedIp"
+      @close="selectedIp = null"
+    />
+
     </main>
 
     <!-- 页脚 -->
