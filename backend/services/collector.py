@@ -218,6 +218,7 @@ def parse_gpu_devices(lines: List[str]) -> List[Dict[str, Any]]:
 
 def build_windows_ps_cmd() -> str:
     return (
+        '$ProgressPreference="SilentlyContinue"; '
         '$os=(Get-WmiObject Win32_OperatingSystem).Caption.Replace("Microsoft Windows ","Win ").Replace(" 专业版"," Pro"); '
         "$cpu=(Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; "
         "$mem=Get-WmiObject Win32_OperatingSystem; "
@@ -235,13 +236,23 @@ def build_windows_ps_cmd() -> str:
         '$gpus=Get-CimInstance Win32_VideoController; '
         'foreach($g in $gpus){$name=($g.Name -replace "[`r`n|]"," ").Trim();$vendor=($g.AdapterCompatibility -replace "[`r`n|]"," ").Trim();$driver=($g.DriverVersion -replace "[`r`n|]"," ").Trim();if($g.AdapterRAM){$ram=[math]::Round($g.AdapterRAM/1MB,0)}else{$ram=0};$gpuStr+="$name|$ram|$vendor|$driver`n"}; '
         "$boot=$mem.LastBootUpTime; $now=Get-Date; $up=$now-[System.Management.ManagementDateTimeConverter]::ToDateTime($boot); $upSecs=[math]::Round($up.TotalSeconds,0); "
+        "$cores=(Get-WmiObject Win32_Processor | Measure-Object NumberOfLogicalProcessors -Sum).Sum; if(-not $cores){$cores=@(Get-WmiObject Win32_Processor).Count}; "
+        "$pf=Get-WmiObject Win32_PageFileUsage; $swapTotal=0; $swapUsed=0; if($pf){$swapTotal=($pf|Measure-Object AllocatedBaseSize -Sum).Sum; $swapUsed=($pf|Measure-Object CurrentUsage -Sum).Sum}; "
+        "$hn=$env:COMPUTERNAME; "
+        "$ver=(Get-WmiObject Win32_OperatingSystem).Version; "
+        "$tcp=(Get-NetTCPConnection -ErrorAction SilentlyContinue | Measure-Object).Count; if(-not $tcp){$tcp=0}; "
         'Write-Output "---OS---"; Write-Output $os; '
         'Write-Output "---CPU---"; Write-Output $cpu; '
         'Write-Output "---MEM---"; Write-Output "$memTotal $memRemain $pct"; '
         'Write-Output "---DISK---"; Write-Output $diskStr; '
         'Write-Output "---DISKHW---"; Write-Output $diskHwStr; '
         'Write-Output "---GPU---"; Write-Output $gpuStr; '
-        'Write-Output "---UPTIME---"; Write-Output $upSecs'
+        'Write-Output "---UPTIME---"; Write-Output $upSecs; '
+        'Write-Output "---SWAP---"; Write-Output "$swapTotal $swapUsed"; '
+        'Write-Output "---CORES---"; Write-Output $cores; '
+        'Write-Output "---KERNEL---"; Write-Output $ver; '
+        'Write-Output "---HOSTNAME---"; Write-Output $hn; '
+        'Write-Output "---TCP---"; Write-Output $tcp'
     )
 
 
@@ -257,6 +268,12 @@ def parse_windows_collection_output(
     memory_total_mb = 0.0
     memory_used_mb = 0.0
     uptime_seconds = 0
+    swap_total_mb = 0.0
+    swap_used_mb = 0.0
+    cpu_cores = 0
+    kernel = ""
+    real_hostname = ""
+    tcp_conns = 0
     mode = ""
 
     for line in stdout.split("\n"):
@@ -302,6 +319,24 @@ def parse_windows_collection_output(
             uptime = format_uptime(line)
             uptime_seconds = parse_uptime_seconds(line)
             mode = ""
+        elif mode == "SWAP":
+            parts = line.split()
+            if len(parts) >= 2:
+                swap_total_mb = safe_float(parts[0])
+                swap_used_mb = safe_float(parts[1])
+            mode = ""
+        elif mode == "CORES":
+            cpu_cores = int(safe_float(line))
+            mode = ""
+        elif mode == "KERNEL":
+            kernel = line.strip()
+            mode = ""
+        elif mode == "HOSTNAME":
+            real_hostname = line.strip()
+            mode = ""
+        elif mode == "TCP":
+            tcp_conns = int(safe_float(line))
+            mode = ""
 
     data_disk_str = "\n".join(data_disks) if data_disks else "无数据盘"
     return make_collection_record(
@@ -320,6 +355,14 @@ def parse_windows_collection_output(
         uptime_seconds=uptime_seconds,
         storage_devices=parse_windows_storage_devices(storage_hw_lines),
         gpu_devices=parse_gpu_devices(gpu_lines),
+        extra={
+            "swap_total_mb": swap_total_mb,
+            "swap_used_mb": swap_used_mb,
+            "cpu_cores": cpu_cores,
+            "kernel": kernel,
+            "real_hostname": real_hostname,
+            "tcp_conns": tcp_conns,
+        },
     )
 
 
