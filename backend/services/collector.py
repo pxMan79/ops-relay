@@ -268,6 +268,26 @@ def build_windows_ps_cmd(include_net: bool = True, include_topproc: bool = True)
     return "".join(vars_ + outputs)
 
 
+def build_windows_ps_cmd_light() -> str:
+    """轻量采集: 只采 CPU/内存/Swap/运行时间/Top进程(磁盘/硬件/GPU/OS 等由 save 沿用全量)。"""
+    return (
+        '$ProgressPreference="SilentlyContinue"; $ErrorActionPreference="SilentlyContinue"; '
+        "$cpu=(Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average; "
+        "$mem=Get-WmiObject Win32_OperatingSystem; "
+        "$memTotal=[math]::Round($mem.TotalVisibleMemorySize/1024,0); "
+        "$memUsed=$memTotal-[math]::Round($mem.FreePhysicalMemory/1024,0); "
+        "$memRemain=$memTotal-$memUsed; "
+        "if($memTotal -eq 0){$pct=0}else{$pct=[math]::Round(($memUsed/$memTotal)*100,1)}; "
+        "$boot=$mem.LastBootUpTime; $now=Get-Date; $up=$now-[System.Management.ManagementDateTimeConverter]::ToDateTime($boot); $upSecs=[math]::Round($up.TotalSeconds,0); "
+        "$pf=Get-WmiObject Win32_PageFileUsage; $swapTotal=0; $swapUsed=0; if($pf){$swapTotal=($pf|Measure-Object AllocatedBaseSize -Sum).Sum; $swapUsed=($pf|Measure-Object CurrentUsage -Sum).Sum}; "
+        'Write-Output "---CPU---"; Write-Output $cpu; '
+        'Write-Output "---MEM---"; Write-Output "$memTotal $memRemain $pct"; '
+        'Write-Output "---UPTIME---"; Write-Output $upSecs; '
+        'Write-Output "---SWAP---"; Write-Output "$swapTotal $swapUsed"; '
+        'Write-Output "---TOPPROC---"; try{Get-Process | Sort-Object WS -Descending | Select-Object -First 5 | ForEach-Object{Write-Output ("{0}|{1}" -f [math]::Round($_.WS/1MB,1), $_.Name)}}catch{}'
+    )
+
+
 def parse_windows_collection_output(
     host: str,
     stdout: str,
@@ -462,7 +482,7 @@ def make_collection_record(
     return record
 
 
-def get_linux_data() -> List[Dict[str, Any]]:
+def get_linux_data(mode: str = "full") -> List[Dict[str, Any]]:
     # 通过 /proc/stat 计算瞬时 CPU 使用率，避免 top 输出受系统语言影响
     cpu_cmd = (
         "(awk '/^cpu / {print $2+$3+$4, $2+$3+$4+$5+$6+$7+$8}' /proc/stat; "
@@ -500,24 +520,36 @@ def get_linux_data() -> List[Dict[str, Any]]:
         'fi'
     )
 
-    cmd = (
-        'echo "---OS---"; '
-        '(cat /etc/redhat-release 2>/dev/null || { . /etc/os-release 2>/dev/null && echo "${PRETTY_NAME}"; } || uname -sr); '
-        "echo ---CPU---; " + cpu_cmd + "; "
-        'echo "---MEM---"; free -m; '
-        'echo "---MEMINFO---"; grep -E "MemTotal|MemAvailable" /proc/meminfo 2>/dev/null || true; '
-        'echo "---DISK---"; df -hP; '
-        'echo "---DISKHW---"; ' + disk_hw_cmd + '; '
-        'echo "---GPU---"; ' + gpu_cmd + '; '
-        'echo "---UPTIME---"; cat /proc/uptime; '
-        'echo "---LOADAVG---"; cat /proc/loadavg; '
-        'echo "---CORES---"; nproc; '
-        'echo "---KERNEL---"; uname -r; '
-        'echo "---HOSTNAME---"; hostname; '
-        'echo "---TCP---"; awk "NR>1" /proc/net/tcp 2>/dev/null | wc -l; '
-        'echo "---NET---"; cat /proc/net/dev; '
-        'echo "---TOPPROC---"; ps -eo rss,%mem,comm --sort=-rss --no-headers 2>/dev/null | head -5'
-    )
+    if mode == "light":
+        # 轻量采集: 只采会变 & 驱动告警的性能指标(CPU/内存/Swap/负载/运行时间/Top进程);
+        # 磁盘/硬件/GPU/OS等短时间不变的, 由 save 阶段沿用上次全量的值
+        cmd = (
+            "echo ---CPU---; " + cpu_cmd + "; "
+            'echo "---MEM---"; free -m; '
+            'echo "---MEMINFO---"; grep -E "MemTotal|MemAvailable" /proc/meminfo 2>/dev/null || true; '
+            'echo "---UPTIME---"; cat /proc/uptime; '
+            'echo "---LOADAVG---"; cat /proc/loadavg; '
+            'echo "---TOPPROC---"; ps -eo rss,%mem,comm --sort=-rss --no-headers 2>/dev/null | head -5'
+        )
+    else:
+        cmd = (
+            'echo "---OS---"; '
+            '(cat /etc/redhat-release 2>/dev/null || { . /etc/os-release 2>/dev/null && echo "${PRETTY_NAME}"; } || uname -sr); '
+            "echo ---CPU---; " + cpu_cmd + "; "
+            'echo "---MEM---"; free -m; '
+            'echo "---MEMINFO---"; grep -E "MemTotal|MemAvailable" /proc/meminfo 2>/dev/null || true; '
+            'echo "---DISK---"; df -hP; '
+            'echo "---DISKHW---"; ' + disk_hw_cmd + '; '
+            'echo "---GPU---"; ' + gpu_cmd + '; '
+            'echo "---UPTIME---"; cat /proc/uptime; '
+            'echo "---LOADAVG---"; cat /proc/loadavg; '
+            'echo "---CORES---"; nproc; '
+            'echo "---KERNEL---"; uname -r; '
+            'echo "---HOSTNAME---"; hostname; '
+            'echo "---TCP---"; awk "NR>1" /proc/net/tcp 2>/dev/null | wc -l; '
+            'echo "---NET---"; cat /proc/net/dev; '
+            'echo "---TOPPROC---"; ps -eo rss,%mem,comm --sort=-rss --no-headers 2>/dev/null | head -5'
+        )
 
     groups = config_loader.get_server_groups()
     linux_group = groups.get("all_linux", [])
@@ -866,8 +898,13 @@ def collect_one_via_winrm(host: str, ps_script: str) -> tuple:
     return resp.std_out.decode(errors="replace"), None
 
 
-def get_windows_data() -> List[Dict[str, Any]]:
-    ps_cmd = build_windows_ps_cmd()
+def get_windows_data(mode: str = "full") -> List[Dict[str, Any]]:
+    if mode == "light":
+        ps_cmd = build_windows_ps_cmd_light()
+        winrm_cmd = build_windows_ps_cmd_light()
+    else:
+        ps_cmd = build_windows_ps_cmd()
+        winrm_cmd = build_windows_ps_cmd(include_net=False, include_topproc=False)
 
     groups = config_loader.get_server_groups()
     windows_group = groups.get("windows", [])
@@ -902,7 +939,7 @@ def get_windows_data() -> List[Dict[str, Any]]:
 
         # 3) Ansible 失败（如老系统 PowerShell<5.1 的模块门禁）→ raw WinRM 兜底，不改目标机
         #    run_ps 路径用 include_net=False：老 Windows 脚本长度有上限，牺牲网卡流量换稳定
-        stdout, err = collect_one_via_winrm(host, build_windows_ps_cmd(include_net=False, include_topproc=False))
+        stdout, err = collect_one_via_winrm(host, winrm_cmd)
         if stdout is None:
             ansible_err = info.get("msg", "Ansible 未返回该主机结果") if info else "Ansible 未返回该主机结果"
             data_list.append(
@@ -1006,8 +1043,8 @@ class CollectorService:
         self.db = db_manager
         self._pending_alerts = []
 
-    def collect_all(self) -> List[Dict[str, Any]]:
-        all_data = get_linux_data() + get_windows_ssh_data() + get_windows_data()
+    def collect_all(self, mode: str = "full") -> List[Dict[str, Any]]:
+        all_data = get_linux_data(mode) + get_windows_ssh_data() + get_windows_data(mode)
 
         if not all_data:
             return []
@@ -1015,7 +1052,7 @@ class CollectorService:
         all_data.sort(key=sort_logic)
         return all_data
 
-    def save_to_database(self, data: List[Dict[str, Any]]) -> None:
+    def save_to_database(self, data: List[Dict[str, Any]], mode: str = "full") -> None:
         db_session = self.db.get_session()
 
         try:
@@ -1046,6 +1083,28 @@ class CollectorService:
                     if os_version and os_version != "获取失败":
                         server.hostname = os_version
                         server.os_version = os_version
+
+                # 轻量采集: 磁盘/硬件/GPU/OS 等短时间不变, 沿用上次全量的值(避免大屏丢这些信息)
+                if mode == "light":
+                    prev = (
+                        db_session.query(HistorySnapshot)
+                        .filter_by(server_id=server.id)
+                        .order_by(HistorySnapshot.collected_at.desc())
+                        .first()
+                    )
+                    if prev and prev.disks_info:
+                        pdi = prev.disks_info if isinstance(prev.disks_info, dict) else {}
+                        if (item.get("系统盘(/或C盘)") in (None, "", "获取失败")) and pdi.get("system_disk"):
+                            item["系统盘(/或C盘)"] = pdi["system_disk"]
+                        if (item.get("数据盘") in (None, "", "无数据盘", "获取失败")) and pdi.get("data_disks"):
+                            item["数据盘"] = pdi["data_disks"]
+                        if not item.get("storage_devices") and pdi.get("storage_devices"):
+                            item["storage_devices"] = pdi["storage_devices"]
+                        if not item.get("gpu_devices") and pdi.get("gpu_devices"):
+                            item["gpu_devices"] = pdi["gpu_devices"]
+                        for k in ("kernel", "real_hostname", "cpu_cores"):
+                            if not item.get(k) and pdi.get(k):
+                                item[k] = pdi[k]
 
                 # 解析监控数据
                 cpu_usage = parse_cpu_value(item.get("CPU状态", "0%"))
