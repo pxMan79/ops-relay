@@ -13,7 +13,8 @@ on:
 
 jobs:
   deploy:
-    runs-on: ops-relay
+    runs-on: aurora
+    if: github.actor == 'pxMan79'
     steps:
       - name: Pull latest code
         run: |
