@@ -10,7 +10,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    image: shabox/ops-relay:latest
+    image: pxman/ops-relay:latest
     container_name: ops-relay
     restart: unless-stopped
     ports:
